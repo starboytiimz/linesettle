@@ -15,11 +15,13 @@ calculates each settlement from newly accepted receipt deltas.
 Buyer creates a PO → supplier accepts → buyer funds the full PO → supplier
 submits receipt quantities → buyer accepts and settles them → the contract
 rechecks current quantity bounds and transfers the exact quantity-derived
-SEP-41 amount to the supplier.
+SEP-41 amount to the supplier. When every ordered quantity is accepted, the PO
+closes automatically. Buyer and supplier may also cancel an Accepted or Funded
+PO together; a Funded PO refunds only its remaining unpaid value to the buyer.
 
 ## Current evidence
 
-- 54 local Soroban host tests passed on the current baseline.
+- 62 local Soroban host tests pass on this revision.
 - Rust 1.95.0, `soroban-sdk = 28.0.0`, Stellar CLI 28.1.0, and
   `wasm32v1-none` are pinned.
 - `Cargo.lock` is committed; the contract has a locked WASM build.
@@ -44,5 +46,6 @@ stellar contract build --locked --package linesettle
 - Each PO is limited to eight lines.
 - Compatibility has been tested with the pinned SDK host and its Stellar Asset
   Contract fixture, not broadly with custom SEP-41 tokens.
-- Full-fulfillment closeout and mutual cancellation/refund are not implemented.
+- The Stage 2F closeout and cancellation behavior has local host-test evidence;
+  live-network behavior is not verified.
 - No `LICENSE` has been selected yet.

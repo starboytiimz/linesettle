@@ -35,6 +35,8 @@ pub enum PoStatus {
     Draft,
     Accepted,
     Funded,
+    Closed,
+    Cancelled,
 }
 
 #[contracttype]
@@ -102,7 +104,11 @@ pub struct PurchaseOrder {
     pub funded_value: i128,
     /// Sum of successfully settled receipt values for this PO.
     pub paid_value: i128,
+    /// Value refunded to the buyer by mutual cancellation.
+    pub refunded_value: i128,
     pub line_count: u32,
+    /// Bounded index used for closeout and accepted-value invariant checks.
+    pub line_ids: Vec<u32>,
 }
 
 #[contracttype]
@@ -177,6 +183,12 @@ impl PoSettlement {
             return Err(PoError::ArithmeticOverflow);
         }
 
+        let mut line_ids = Vec::new(&env);
+        let mut i = 0;
+        while i < lines.len() {
+            line_ids.push_back(lines.get(i).ok_or(PoError::InvalidLine)?.line_id);
+            i += 1;
+        }
         let header = PurchaseOrder {
             po_id,
             buyer,
@@ -186,7 +198,9 @@ impl PoSettlement {
             total_value,
             funded_value: 0,
             paid_value: 0,
+            refunded_value: 0,
             line_count: lines.len(),
+            line_ids,
         };
         env.storage().persistent().set(&header_key, &header);
         let mut i = 0;
@@ -449,7 +463,20 @@ impl PoSettlement {
             i += 1;
         }
 
+        let accepted_value = calculate_accepted_value(&env, &header)?;
+        if accepted_value != new_paid_value {
+            return Err(PoError::InvalidState);
+        }
+        let all_lines_fulfilled = all_lines_fulfilled(&env, &header)?;
+        if all_lines_fulfilled
+            && (new_paid_value != header.total_value || header.refunded_value != 0)
+        {
+            return Err(PoError::InvalidState);
+        }
         header.paid_value = new_paid_value;
+        if all_lines_fulfilled {
+            header.status = PoStatus::Closed;
+        }
         receipt.status = ReceiptStatus::Settled;
         env.storage().persistent().set(&po_key, &header);
         env.storage().persistent().set(&receipt_key, &receipt);
@@ -462,6 +489,76 @@ impl PoSettlement {
         );
 
         Ok(settlement_value)
+    }
+
+    /// Cancels an Accepted or Funded PO only with authorization from both
+    /// recorded parties. A funded PO refunds only its unpaid, unrefunded value.
+    pub fn cancel_po(env: Env, po_id: u64) -> Result<(), PoError> {
+        let key = DataKey::Header(po_id);
+        let mut header: PurchaseOrder = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(PoError::NotFound)?;
+        if header.status != PoStatus::Accepted && header.status != PoStatus::Funded {
+            return Err(PoError::InvalidState);
+        }
+
+        header.buyer.require_auth();
+        header.supplier.require_auth();
+
+        let refund = match &header.status {
+            PoStatus::Accepted => {
+                if header.funded_value != 0 || header.paid_value != 0 || header.refunded_value != 0
+                {
+                    return Err(PoError::InvalidState);
+                }
+                0
+            }
+            PoStatus::Funded => {
+                if header.funded_value != header.total_value
+                    || calculate_accepted_value(&env, &header)? != header.paid_value
+                {
+                    return Err(PoError::InvalidState);
+                }
+                let remaining = header
+                    .funded_value
+                    .checked_sub(header.paid_value)
+                    .and_then(|value| value.checked_sub(header.refunded_value))
+                    .ok_or(PoError::ArithmeticOverflow)?;
+                if remaining <= 0 {
+                    return Err(PoError::InvalidState);
+                }
+                let refunded_value = header
+                    .refunded_value
+                    .checked_add(remaining)
+                    .ok_or(PoError::ArithmeticOverflow)?;
+                let accounted_value = header
+                    .paid_value
+                    .checked_add(refunded_value)
+                    .ok_or(PoError::ArithmeticOverflow)?;
+                if accounted_value != header.funded_value {
+                    return Err(PoError::InvalidState);
+                }
+                header.refunded_value = refunded_value;
+                remaining
+            }
+            _ => return Err(PoError::InvalidState),
+        };
+
+        header.status = PoStatus::Cancelled;
+        // Persist before the outgoing transfer so the failure path exercises
+        // invocation rollback for the actual cancellation operation.
+        env.storage().persistent().set(&key, &header);
+        if refund > 0 {
+            let contract_address = env.current_contract_address();
+            token::TokenClient::new(&env, &header.token).transfer(
+                &contract_address,
+                &header.buyer,
+                &refund,
+            );
+        }
+        Ok(())
     }
 
     pub fn get_receipt(env: Env, po_id: u64, receipt_id: u64) -> Result<Receipt, PoError> {
@@ -496,6 +593,44 @@ impl PoSettlement {
             .get(&DataKey::Line(po_id, line_id))
             .ok_or(PoError::NotFound)
     }
+}
+
+fn calculate_accepted_value(env: &Env, header: &PurchaseOrder) -> Result<i128, PoError> {
+    let mut total = 0_i128;
+    let mut i = 0;
+    while i < header.line_count {
+        let line_id = header.line_ids.get(i).ok_or(PoError::InvalidLine)?;
+        let line: PoLine = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Line(header.po_id, line_id))
+            .ok_or(PoError::NotFound)?;
+        let line_value = i128::from(line.accepted_quantity)
+            .checked_mul(line.unit_price)
+            .ok_or(PoError::ArithmeticOverflow)?;
+        total = total
+            .checked_add(line_value)
+            .ok_or(PoError::ArithmeticOverflow)?;
+        i += 1;
+    }
+    Ok(total)
+}
+
+fn all_lines_fulfilled(env: &Env, header: &PurchaseOrder) -> Result<bool, PoError> {
+    let mut i = 0;
+    while i < header.line_count {
+        let line_id = header.line_ids.get(i).ok_or(PoError::InvalidLine)?;
+        let line: PoLine = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Line(header.po_id, line_id))
+            .ok_or(PoError::NotFound)?;
+        if line.accepted_quantity != line.ordered_quantity {
+            return Ok(false);
+        }
+        i += 1;
+    }
+    Ok(true)
 }
 
 fn calculate_receipt_value(

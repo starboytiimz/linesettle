@@ -193,6 +193,80 @@ fn funded_flagship(f: &Fixture, po_id: u64) {
     create_funded_po(f, po_id, &lines);
 }
 
+fn authorized_cancel(f: &Fixture, po_id: u64) {
+    let invoke = MockAuthInvoke {
+        contract: &f.contract,
+        fn_name: "cancel_po",
+        args: (po_id,).into_val(&f.env),
+        sub_invokes: &[],
+    };
+    f.client()
+        .mock_auths(&[
+            MockAuth {
+                address: &f.buyer,
+                invoke: &invoke,
+            },
+            MockAuth {
+                address: &f.supplier,
+                invoke: &invoke,
+            },
+        ])
+        .cancel_po(&po_id);
+}
+
+fn assert_po_conservation(f: &Fixture, po_id: u64) {
+    let po = header(f, po_id);
+    let mut accepted_value = 0_i128;
+    let mut i = 0;
+    while i < po.line_count {
+        let line_id = po.line_ids.get(i).unwrap();
+        let line = f.client().get_line(&po_id, &line_id);
+        accepted_value = accepted_value
+            .checked_add(
+                i128::from(line.accepted_quantity)
+                    .checked_mul(line.unit_price)
+                    .unwrap(),
+            )
+            .unwrap();
+        i += 1;
+    }
+    assert_eq!(po.paid_value, accepted_value);
+
+    if po.funded_value > 0 {
+        let remaining = po
+            .funded_value
+            .checked_sub(po.paid_value)
+            .unwrap()
+            .checked_sub(po.refunded_value)
+            .unwrap();
+        assert!(remaining >= 0);
+        assert_eq!(
+            po.funded_value,
+            po.paid_value
+                .checked_add(po.refunded_value)
+                .unwrap()
+                .checked_add(remaining)
+                .unwrap()
+        );
+        if po.status == PoStatus::Closed {
+            assert_eq!(remaining, 0);
+            assert_eq!(po.paid_value, po.total_value);
+            assert_eq!(po.refunded_value, 0);
+            for line_id in po.line_ids.iter() {
+                let line = f.client().get_line(&po_id, &line_id);
+                assert_eq!(line.accepted_quantity, line.ordered_quantity);
+            }
+        }
+        if po.status == PoStatus::Cancelled {
+            assert_eq!(remaining, 0);
+            assert_eq!(
+                po.funded_value,
+                po.paid_value.checked_add(po.refunded_value).unwrap()
+            );
+        }
+    }
+}
+
 #[test]
 fn valid_po_creation_derives_total_and_stores_terms() {
     let f = fixture();
@@ -1601,6 +1675,7 @@ fn failed_sac_outgoing_authorization_rolls_back_product_settlement() {
     };
     let admin = StellarAssetClient::new(&f.env, &f.token);
     admin.mock_all_auths().set_authorized(&f.buyer, &true);
+    admin.mock_all_auths().set_authorized(&f.supplier, &true);
     admin.mock_all_auths().set_authorized(&f.contract, &true);
     admin.mock_all_auths().mint(&f.buyer, &100);
     let lines = valid_lines(&f.env);
@@ -1616,6 +1691,7 @@ fn failed_sac_outgoing_authorization_rolls_back_product_settlement() {
     let buyer_before = token_balance(&f, &f.buyer);
     let supplier_before = token_balance(&f, &f.supplier);
     let contract_before = token_balance(&f, &f.contract);
+    admin.mock_all_auths().set_authorized(&f.contract, &false);
 
     let result = f
         .client()
@@ -1682,4 +1758,403 @@ fn insufficient_balance_fails_and_rolls_back_marker_and_balances() {
     assert_eq!(token.balance(&supplier), 0);
     assert_eq!(token.balance(&probe_address), 100);
     assert_eq!(probe.marker(), 0);
+}
+
+#[test]
+fn final_settlement_automatically_closes_and_terminal_state_blocks_mutations() {
+    let f = fixture();
+    funded_flagship(&f, 201);
+    let first = valid_receipt(&f);
+    authorized_submit(&f, 201, 1, &first);
+    assert_eq!(authorized_settle(&f, 201, 1), 56);
+    assert_eq!(header(&f, 201).status, PoStatus::Funded);
+    assert_po_conservation(&f, 201);
+
+    let final_quantities = soroban_sdk::vec![
+        &f.env,
+        ReceiptQuantityInput {
+            line_id: 1,
+            quantity_delta: 4
+        },
+        ReceiptQuantityInput {
+            line_id: 2,
+            quantity_delta: 4
+        },
+    ];
+    authorized_submit(&f, 201, 2, &final_quantities);
+    let stale_quantities = soroban_sdk::vec![
+        &f.env,
+        ReceiptQuantityInput {
+            line_id: 1,
+            quantity_delta: 1
+        },
+    ];
+    authorized_submit(&f, 201, 3, &stale_quantities);
+
+    let supplier_before_final = token_balance(&f, &f.supplier);
+    let contract_before_final = token_balance(&f, &f.contract);
+    assert_eq!(authorized_settle(&f, 201, 2), 44);
+
+    let po = header(&f, 201);
+    assert_eq!(po.status, PoStatus::Closed);
+    assert_eq!(po.funded_value, 100);
+    assert_eq!(po.paid_value, 100);
+    assert_eq!(po.refunded_value, 0);
+    assert_eq!(f.client().get_line(&201, &1).accepted_quantity, 10);
+    assert_eq!(f.client().get_line(&201, &2).accepted_quantity, 8);
+    assert_eq!(
+        f.client().get_receipt(&201, &1).status,
+        ReceiptStatus::Settled
+    );
+    assert_eq!(
+        f.client().get_receipt(&201, &2).status,
+        ReceiptStatus::Settled
+    );
+    assert_eq!(
+        f.client().get_receipt(&201, &3).status,
+        ReceiptStatus::Submitted
+    );
+    assert_eq!(token_balance(&f, &f.supplier), supplier_before_final + 44);
+    assert_eq!(token_balance(&f, &f.contract), contract_before_final - 44);
+    assert_po_conservation(&f, 201);
+
+    let balance_snapshot = (
+        token_balance(&f, &f.buyer),
+        token_balance(&f, &f.supplier),
+        token_balance(&f, &f.contract),
+    );
+    assert!(f.client().mock_all_auths().try_fund_po(&201).is_err());
+    assert!(f
+        .client()
+        .mock_all_auths()
+        .try_submit_receipt(&201, &4, &stale_quantities)
+        .is_err());
+    assert!(f
+        .client()
+        .mock_all_auths()
+        .try_accept_receipt_and_settle(&201, &3)
+        .is_err());
+    assert!(f.client().mock_all_auths().try_cancel_po(&201).is_err());
+    assert_eq!(
+        balance_snapshot,
+        (
+            token_balance(&f, &f.buyer),
+            token_balance(&f, &f.supplier),
+            token_balance(&f, &f.contract),
+        )
+    );
+    assert_eq!(header(&f, 201), po);
+    assert_eq!(
+        f.client().get_receipt(&201, &3).status,
+        ReceiptStatus::Submitted
+    );
+}
+
+#[test]
+fn failed_final_supplier_transfer_rolls_back_closeout_and_all_settlement_writes() {
+    let env = Env::default();
+    let buyer = Address::generate(&env);
+    let supplier = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let sac = env.register_stellar_asset_contract_v2(issuer);
+    let issuer_control = sac.issuer();
+    issuer_control.set_flag(IssuerFlags::RequiredFlag);
+    issuer_control.set_flag(IssuerFlags::RevocableFlag);
+    let token = sac.address();
+    let contract = env.register(PoSettlement, ());
+    let f = Fixture {
+        env,
+        contract,
+        buyer,
+        supplier,
+        token,
+    };
+    let admin = StellarAssetClient::new(&f.env, &f.token);
+    admin.mock_all_auths().set_authorized(&f.buyer, &true);
+    admin.mock_all_auths().set_authorized(&f.supplier, &true);
+    admin.mock_all_auths().set_authorized(&f.contract, &true);
+    admin.mock_all_auths().mint(&f.buyer, &100);
+    let lines = valid_lines(&f.env);
+    create_and_accept(&f, 202, &lines);
+    f.client().mock_all_auths().fund_po(&202);
+    let partial = valid_receipt(&f);
+    authorized_submit(&f, 202, 1, &partial);
+    assert_eq!(authorized_settle(&f, 202, 1), 56);
+    let final_quantities = soroban_sdk::vec![
+        &f.env,
+        ReceiptQuantityInput {
+            line_id: 1,
+            quantity_delta: 4
+        },
+        ReceiptQuantityInput {
+            line_id: 2,
+            quantity_delta: 4
+        },
+    ];
+    authorized_submit(&f, 202, 2, &final_quantities);
+
+    let po_before = header(&f, 202);
+    let line_a_before = f.client().get_line(&202, &1);
+    let line_b_before = f.client().get_line(&202, &2);
+    let receipt_before = f.client().get_receipt(&202, &2);
+    let buyer_before = token_balance(&f, &f.buyer);
+    let supplier_before = token_balance(&f, &f.supplier);
+    let contract_before = token_balance(&f, &f.contract);
+    admin.mock_all_auths().set_authorized(&f.contract, &false);
+
+    assert!(f
+        .client()
+        .mock_all_auths()
+        .try_accept_receipt_and_settle(&202, &2)
+        .is_err());
+    assert_eq!(header(&f, 202), po_before);
+    assert_eq!(header(&f, 202).status, PoStatus::Funded);
+    assert_eq!(f.client().get_line(&202, &1), line_a_before);
+    assert_eq!(f.client().get_line(&202, &2), line_b_before);
+    assert_eq!(f.client().get_receipt(&202, &2), receipt_before);
+    assert_eq!(
+        f.client().get_receipt(&202, &2).status,
+        ReceiptStatus::Submitted
+    );
+    assert_eq!(token_balance(&f, &f.buyer), buyer_before);
+    assert_eq!(token_balance(&f, &f.supplier), supplier_before);
+    assert_eq!(token_balance(&f, &f.contract), contract_before);
+    assert_po_conservation(&f, 202);
+}
+
+#[test]
+fn accepted_unfunded_po_cancels_with_both_parties_and_no_refund() {
+    let f = fixture();
+    let lines = valid_lines(&f.env);
+    create_and_accept(&f, 203, &lines);
+    let balances_before = (
+        token_balance(&f, &f.buyer),
+        token_balance(&f, &f.supplier),
+        token_balance(&f, &f.contract),
+    );
+
+    authorized_cancel(&f, 203);
+    let po = header(&f, 203);
+    assert_eq!(po.status, PoStatus::Cancelled);
+    assert_eq!(po.funded_value, 0);
+    assert_eq!(po.paid_value, 0);
+    assert_eq!(po.refunded_value, 0);
+    assert_eq!(
+        balances_before,
+        (
+            token_balance(&f, &f.buyer),
+            token_balance(&f, &f.supplier),
+            token_balance(&f, &f.contract),
+        )
+    );
+    assert!(f.client().mock_all_auths().try_cancel_po(&203).is_err());
+    assert!(f.client().mock_all_auths().try_fund_po(&203).is_err());
+    let quantities = valid_receipt(&f);
+    assert!(f
+        .client()
+        .mock_all_auths()
+        .try_submit_receipt(&203, &1, &quantities)
+        .is_err());
+    assert!(f
+        .client()
+        .mock_all_auths()
+        .try_accept_receipt_and_settle(&203, &1)
+        .is_err());
+    assert_po_conservation(&f, 203);
+}
+
+#[test]
+fn cancellation_requires_buyer_and_supplier_authorization() {
+    let f = fixture();
+    let lines = valid_lines(&f.env);
+    create_and_accept(&f, 204, &lines);
+    let invoke = MockAuthInvoke {
+        contract: &f.contract,
+        fn_name: "cancel_po",
+        args: (204_u64,).into_val(&f.env),
+        sub_invokes: &[],
+    };
+
+    assert!(f
+        .client()
+        .mock_auths(&[MockAuth {
+            address: &f.buyer,
+            invoke: &invoke,
+        }])
+        .try_cancel_po(&204)
+        .is_err());
+    assert!(f
+        .client()
+        .mock_auths(&[MockAuth {
+            address: &f.supplier,
+            invoke: &invoke,
+        }])
+        .try_cancel_po(&204)
+        .is_err());
+    let unrelated = Address::generate(&f.env);
+    assert!(f
+        .client()
+        .mock_auths(&[MockAuth {
+            address: &unrelated,
+            invoke: &invoke,
+        }])
+        .try_cancel_po(&204)
+        .is_err());
+    assert_eq!(header(&f, 204).status, PoStatus::Accepted);
+    assert_eq!(header(&f, 204).funded_value, 0);
+    assert_eq!(header(&f, 204).refunded_value, 0);
+}
+
+#[test]
+fn partial_settlement_mutual_cancel_refunds_only_remaining_value_and_pending_receipts_are_inert() {
+    let f = fixture();
+    funded_flagship(&f, 205);
+    let first = valid_receipt(&f);
+    authorized_submit(&f, 205, 1, &first);
+    assert_eq!(authorized_settle(&f, 205, 1), 56);
+    let pending = soroban_sdk::vec![
+        &f.env,
+        ReceiptQuantityInput {
+            line_id: 1,
+            quantity_delta: 1
+        },
+    ];
+    authorized_submit(&f, 205, 2, &pending);
+    let buyer_before_cancel = token_balance(&f, &f.buyer);
+    let supplier_before_cancel = token_balance(&f, &f.supplier);
+    let contract_before_cancel = token_balance(&f, &f.contract);
+    let accepted_a = f.client().get_line(&205, &1).accepted_quantity;
+    let accepted_b = f.client().get_line(&205, &2).accepted_quantity;
+
+    authorized_cancel(&f, 205);
+    let po = header(&f, 205);
+    assert_eq!(po.status, PoStatus::Cancelled);
+    assert_eq!(po.funded_value, 100);
+    assert_eq!(po.paid_value, 56);
+    assert_eq!(po.refunded_value, 44);
+    assert_eq!(f.client().get_line(&205, &1).accepted_quantity, accepted_a);
+    assert_eq!(f.client().get_line(&205, &2).accepted_quantity, accepted_b);
+    assert_eq!(token_balance(&f, &f.buyer), buyer_before_cancel + 44);
+    assert_eq!(token_balance(&f, &f.supplier), supplier_before_cancel);
+    assert_eq!(token_balance(&f, &f.contract), contract_before_cancel - 44);
+    assert_eq!(
+        f.client().get_receipt(&205, &1).status,
+        ReceiptStatus::Settled
+    );
+    assert_eq!(
+        f.client().get_receipt(&205, &2).status,
+        ReceiptStatus::Submitted
+    );
+    assert!(f.client().mock_all_auths().try_cancel_po(&205).is_err());
+    assert!(f.client().mock_all_auths().try_fund_po(&205).is_err());
+    let another = soroban_sdk::vec![
+        &f.env,
+        ReceiptQuantityInput {
+            line_id: 1,
+            quantity_delta: 1
+        },
+    ];
+    assert!(f
+        .client()
+        .mock_all_auths()
+        .try_submit_receipt(&205, &3, &another)
+        .is_err());
+    assert!(f
+        .client()
+        .mock_all_auths()
+        .try_accept_receipt_and_settle(&205, &2)
+        .is_err());
+    assert_po_conservation(&f, 205);
+}
+
+#[test]
+fn failed_refund_transfer_rolls_back_mutual_cancellation() {
+    let env = Env::default();
+    let buyer = Address::generate(&env);
+    let supplier = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let sac = env.register_stellar_asset_contract_v2(issuer);
+    let issuer_control = sac.issuer();
+    issuer_control.set_flag(IssuerFlags::RequiredFlag);
+    issuer_control.set_flag(IssuerFlags::RevocableFlag);
+    let token = sac.address();
+    let contract = env.register(PoSettlement, ());
+    let f = Fixture {
+        env,
+        contract,
+        buyer,
+        supplier,
+        token,
+    };
+    let admin = StellarAssetClient::new(&f.env, &f.token);
+    admin.mock_all_auths().set_authorized(&f.buyer, &true);
+    admin.mock_all_auths().set_authorized(&f.supplier, &true);
+    admin.mock_all_auths().set_authorized(&f.contract, &true);
+    admin.mock_all_auths().mint(&f.buyer, &1_000);
+    let lines = valid_lines(&f.env);
+    create_and_accept(&f, 206, &lines);
+    f.client().mock_all_auths().fund_po(&206);
+    let first = valid_receipt(&f);
+    authorized_submit(&f, 206, 1, &first);
+    assert_eq!(authorized_settle(&f, 206, 1), 56);
+
+    let po_before = header(&f, 206);
+    let line_a_before = f.client().get_line(&206, &1);
+    let line_b_before = f.client().get_line(&206, &2);
+    let buyer_before = token_balance(&f, &f.buyer);
+    let supplier_before = token_balance(&f, &f.supplier);
+    let contract_before = token_balance(&f, &f.contract);
+    admin.mock_all_auths().set_authorized(&f.contract, &false);
+
+    assert!(f.client().mock_all_auths().try_cancel_po(&206).is_err());
+    assert_eq!(header(&f, 206), po_before);
+    assert_eq!(header(&f, 206).status, PoStatus::Funded);
+    assert_eq!(header(&f, 206).refunded_value, 0);
+    assert_eq!(f.client().get_line(&206, &1), line_a_before);
+    assert_eq!(f.client().get_line(&206, &2), line_b_before);
+    assert_eq!(f.client().get_line(&206, &1).accepted_quantity, 6);
+    assert_eq!(f.client().get_line(&206, &2).accepted_quantity, 4);
+    assert_eq!(token_balance(&f, &f.buyer), buyer_before);
+    assert_eq!(token_balance(&f, &f.supplier), supplier_before);
+    assert_eq!(token_balance(&f, &f.contract), contract_before);
+    assert_po_conservation(&f, 206);
+}
+
+#[test]
+fn cancellation_state_and_conservation_are_isolated_per_po_with_shared_token() {
+    let f = fixture();
+    funded_flagship(&f, 207);
+    funded_flagship(&f, 208);
+    let first = valid_receipt(&f);
+    authorized_submit(&f, 207, 1, &first);
+    assert_eq!(authorized_settle(&f, 207, 1), 56);
+    assert_eq!(header(&f, 208).paid_value, 0);
+    assert_eq!(header(&f, 208).refunded_value, 0);
+    assert_eq!(f.client().get_line(&208, &1).accepted_quantity, 0);
+    assert_eq!(f.client().get_line(&208, &2).accepted_quantity, 0);
+    authorized_cancel(&f, 207);
+
+    let cancelled = header(&f, 207);
+    let untouched = header(&f, 208);
+    assert_eq!(cancelled.status, PoStatus::Cancelled);
+    assert_eq!(cancelled.paid_value, 56);
+    assert_eq!(cancelled.refunded_value, 44);
+    assert_eq!(untouched.status, PoStatus::Funded);
+    assert_eq!(untouched.funded_value, 100);
+    assert_eq!(untouched.paid_value, 0);
+    assert_eq!(untouched.refunded_value, 0);
+    assert_eq!(token_balance(&f, &f.contract), 100);
+    assert_po_conservation(&f, 207);
+    assert_po_conservation(&f, 208);
+}
+
+#[test]
+fn draft_and_unknown_pos_cannot_be_cancelled() {
+    let f = fixture();
+    let lines = valid_lines(&f.env);
+    authorized_create(&f, 209, &lines);
+    assert!(f.client().mock_all_auths().try_cancel_po(&209).is_err());
+    assert!(f.client().mock_all_auths().try_cancel_po(&999).is_err());
+    assert_eq!(header(&f, 209).status, PoStatus::Draft);
+    assert!(f.client().try_get_po(&999).is_err());
 }

@@ -1,0 +1,44 @@
+LineSettle hosted proof on Stage 9 evidence revision
+
+Producer source SHA: e17841902cb8e9cb18afa97a081ce9da90891b34
+Workflow run: https://github.com/starboytiimz/linesettle/actions/runs/38981786768
+Workflow run ID: 38981786768 (pull_request event, attempt 1, success)
+verify job ID: 117244085611 (success)
+flagship job ID: 117244085839 (success)
+Actual checkout: e17841902cb8e9cb18afa97a081ce9da90891b34
+Uploaded artifact name: linesettle-hosted-flagship-proof
+Uploaded artifact ID: 12081880121
+Uploaded artifact file: proof-script-1792193514130780439.log (134044 bytes)
+Preserved file: hosted-flagship-proof.txt (runner absolute paths normalized)
+
+Captured toolchain/environment:
+Rust 1.95.0
+Cargo 1.95.0
+soroban-sdk 28.0.0
+Stellar CLI 28.1.0
+wasm32v1-none
+GitHub-hosted Ubuntu 24.04
+Standalone local Stellar network, protocol 28
+
+WASM filename: linesettle.wasm
+WASM size: 24387 bytes
+WASM SHA-256: 13f3858854c028c9b7eaf31ef3fb172dd6b830aa30e29980f610ad298fb66524
+
+Quickstart requested image: stellar/quickstart:latest
+Resolved digest: sha256:4f8dfd693deba57fddef7f0bc722e4782c2e606c8675e3adc5438cebae249295
+Quickstart image labels: version 24.04, revision 91a64b5da2d7926bc82ae5a1f06048ef08cdcec2
+The workflow requests a floating tag; the resolved digest identifies this run.
+
+Local identity funding: Friendbot HTTP 502 for issuer on attempt 1; HTTP 200
+on attempt 2. Buyer and supplier each returned HTTP 200. Horizon confirmed
+each account before proof execution.
+
+SHA-256 of preserved raw proof log:
+21fb38afb0abe6d568ddde63011ed72767d495afd0bd043eac5f8ca58620b733  hosted-flagship-proof.txt
+
+Checksums identify preserved bytes; they do not by themselves establish that
+the experiment was correct. The log contains actual CLI commands and outputs,
+state and token balance queries, the failed stale-receipt invocation, and the
+script's independent assertions. Runner-specific absolute paths were replaced
+with placeholders; no command arguments or captured economic results were
+changed.

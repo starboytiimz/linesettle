@@ -77,6 +77,29 @@ correct. The artifact manifest and checksums are in
 [`evidence/stage6/manifest.txt`](../evidence/stage6/manifest.txt) and
 [`evidence/stage6/SHA256SUMS`](../evidence/stage6/SHA256SUMS).
 
+### Validation on the evidence revision
+
+This evidence revision was then checked by hosted run
+[`38981786768`](https://github.com/starboytiimz/linesettle/actions/runs/38981786768)
+at source SHA
+`e17841902cb8e9cb18afa97a081ce9da90891b34`. Both the `verify` job
+([`117244085611`](https://github.com/starboytiimz/linesettle/actions/runs/38981786768/job/117244085611))
+and `flagship` job
+([`117244085839`](https://github.com/starboytiimz/linesettle/actions/runs/38981786768/job/117244085839))
+succeeded on that exact revision. The new flagship artifact records the same
+WASM identity, 56/44 closeout, changed-quantity payout 50, stale rejection
+with exit 1 and error #14, unchanged post-rejection state and balances, and
+three repeat executions. Its sanitized raw CLI log and artifact manifest are
+preserved in [`evidence/stage9/`](../evidence/stage9/).
+
+Earlier runs for this revision encountered Quickstart Friendbot HTTP 502 and
+a Stellar CLI Friendbot response parse error before any LineSettle invocation.
+The workflow now retries local funding up to five times and requires Horizon
+to confirm each generated account before continuing. The successful run
+records the first issuer request returning 502, then HTTP 200 on retry, with
+buyer and supplier returning HTTP 200. Persistent funding or Horizon failure
+still fails the job before the proof runs.
+
 ## Reproduce
 
 Prerequisites: Rust/Cargo 1.95.0 with `wasm32v1-none`, Stellar CLI 28.1.0,

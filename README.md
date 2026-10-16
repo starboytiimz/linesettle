@@ -1,10 +1,12 @@
-# Soroban PO Receipt Settlement
+# LineSettle
 
-A Soroban purchase-order receipt settlement contract where supplier payment is
-calculated from buyer-accepted receipt quantities at fixed purchase-order unit
-prices.
+Quantity-derived purchase-order settlement on Stellar.
 
-Generic milestone escrow releases predetermined amounts. This contract stores
+LineSettle is a Soroban purchase-order receipt settlement contract. Settlement
+amounts are computed from buyer-accepted quantities on stored PO lines at fixed
+stored unit prices, rather than from predefined milestone amounts.
+
+Generic milestone escrow releases predetermined amounts. LineSettle stores
 ordered quantities and unit prices, tracks cumulative accepted quantities, and
 calculates each settlement from newly accepted receipt deltas.
 
@@ -29,8 +31,7 @@ Run the checks from the repository root:
 ```sh
 cargo fmt --all -- --check
 cargo test --workspace --locked
-cargo install --locked --version 28.1.0 stellar-cli
-stellar contract build --locked --package po-receipt-settlement
+stellar contract build --locked --package linesettle
 ```
 
 ## Limits

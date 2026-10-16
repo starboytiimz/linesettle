@@ -1,5 +1,5 @@
 [package]
-name = "po-receipt-settlement"
+name = "linesettle"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true

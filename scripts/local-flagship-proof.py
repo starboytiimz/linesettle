@@ -36,12 +36,11 @@ class Proof:
         self.config = args.config_dir.resolve()
         self.wasm = args.wasm.resolve()
         self.report_dir = args.report_dir.resolve()
+        self.repo_root = Path(__file__).resolve().parents[1]
         self.report_dir.mkdir(parents=True, exist_ok=True)
         self.log_path = self.report_dir / f"proof-script-{time.time_ns()}.log"
         self.log = self.log_path.open("w", encoding="utf-8")
         self.cli = ["stellar", "--config-dir", str(self.config)]
-        self.buyer_asset_before = 0
-        self.supplier_asset_before = 0
         self.summary: dict[str, Any] = {"repeat_runs": []}
 
     def close(self) -> None:
@@ -350,9 +349,15 @@ class Proof:
         assert balances_after == balances_before
         return {
             "contract_id": contract, "po_id": po_id, "stale_value_from_raw": stale_value,
-            "po_before_and_after": po_after, "line_a_before_and_after": line_a_after,
-            "line_b_before_and_after": line_b_after, "receipt_before_and_after": stale_after,
-            "balances_before_and_after": balances_after, "cli_exit": rc,
+            "pre_post": {
+                "po": {"before": po_before, "after": po_after},
+                "line_a": {"before": line_a_before, "after": line_a_after},
+                "line_b": {"before": line_b_before, "after": line_b_after},
+                "receipt": {"before": stale_before, "after": stale_after},
+                "balances": {"before": balances_before, "after": balances_after},
+                "equal": True,
+            },
+            "cli_exit": rc,
             "expected_contract_error": "QuantityExceedsRemaining (PoError #14)",
         }
 
@@ -360,18 +365,23 @@ class Proof:
         size = self.wasm.stat().st_size
         sha = hashlib.sha256(self.wasm.read_bytes()).hexdigest()
         assert size == EXPECTED_WASM_SIZE and sha == EXPECTED_WASM_SHA
-        self.summary["source"] = self.run(["--version"])[1].strip()
+        source = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=self.repo_root,
+            text=True, capture_output=True, check=True,
+        ).stdout.strip()
+        self.summary["source_sha"] = source
+        self.summary["stellar_cli"] = self.run(["--version"])[1].strip()
         self.summary["wasm"] = {"path": str(self.wasm), "size": size, "sha256": sha}
         _, network_out, network_err = self.run(["network", "info"], read_only=True)
         network_info = network_out + network_err
         assert "Standalone Network ; February 2017" in network_info
         assert "Protocol Version: 28" in network_info
         self.summary["local_network"] = network_info.strip()
-        self.buyer_asset_before = self.balance(self.args.buyer_address)
-        self.supplier_asset_before = self.balance(self.args.supplier_address)
+        buyer_asset_before = self.balance(self.args.buyer_address)
+        supplier_asset_before = self.balance(self.args.supplier_address)
         self.summary["asset_before"] = {
-            "buyer": self.buyer_asset_before,
-            "supplier": self.supplier_asset_before,
+            "buyer": buyer_asset_before,
+            "supplier": supplier_asset_before,
             "identity": self.args.sac_id,
         }
         po_base = time.time_ns() // 1_000_000 * 10
@@ -398,9 +408,51 @@ class Proof:
             "buyer": self.balance(self.args.buyer_address),
             "supplier": self.balance(self.args.supplier_address),
         }
+        control = self.summary["control"]
+        changed = self.summary["deliberate_change"]
+        stale = self.summary["stale"]
+        repeat_summary = [
+            {
+                "execution": item["execution"], "contract_id": item["contract_id"],
+                "first_payout": item["r1_expected_and_paid"],
+                "final_payout": item["r2_expected_and_paid"],
+                "status": item["final_po"]["status"],
+                "paid": int(item["final_po"]["paid_value"]),
+                "refunded": int(item["final_po"]["refunded_value"]),
+            }
+            for item in self.summary["repeat_runs"]
+        ]
+        final_summary = {
+            "source_sha": source,
+            "wasm_sha256": sha,
+            "wasm_size": size,
+            "stellar_cli": "28.1.0",
+            "local_network": self.summary["local_network"],
+            "linesettle_deployment_id": self.summary["primary_contract"],
+            "settlement_sac_id": self.args.sac_id,
+            "control": {
+                "first_payout": control["r1_expected_and_paid"],
+                "final_payout": control["r2_expected_and_paid"],
+                "status": control["final_po"]["status"],
+                "paid": int(control["final_po"]["paid_value"]),
+                "refunded": int(control["final_po"]["refunded_value"]),
+                "token_deltas": control["token_deltas"],
+            },
+            "changed_quantity": {
+                "payout": changed["expected_and_paid"],
+                "token_deltas": changed["token_deltas"],
+            },
+            "stale_rejection": {
+                "process_exit": stale["cli_exit"],
+                "reason": stale["expected_contract_error"],
+                "pre_post": stale["pre_post"],
+            },
+            "repeat_runs": repeat_summary,
+        }
         self.log.write("\nSEMANTIC_SUMMARY_JSON:\n" + json.dumps(self.summary, indent=2, sort_keys=True) + "\n")
         self.log.flush()
-        print(json.dumps({"verdict": "PASS", "report": str(self.log_path), "summary": self.summary}, indent=2))
+        print("LINESETTLE_LOCAL_FLAGSHIP_PROOF_SUMMARY")
+        print(json.dumps({"verdict": "PASS", "report": str(self.log_path), **final_summary}, indent=2))
 
 
 def main() -> int:

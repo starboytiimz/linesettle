@@ -15,6 +15,17 @@ jobs:
     steps:
       # v4.4.0; immutable release commit.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          # Test the PR head itself rather than GitHub's synthetic merge ref.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Record checked-out source SHA
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          actual=$(git rev-parse HEAD)
+          echo "Checked out $actual"
+          test "$actual" = "$EXPECTED_HEAD"
 
       - name: Install pinned Rust and WASM target
         run: |

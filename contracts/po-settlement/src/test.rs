@@ -132,6 +132,44 @@ fn token_balance(f: &Fixture, address: &Address) -> i128 {
     TokenClient::new(&f.env, &f.token).balance(address)
 }
 
+// Independent test oracle over public raw records. This intentionally does not
+// call either production value calculation helper.
+fn independently_calculate_receipt_value(f: &Fixture, po_id: u64, receipt_id: u64) -> i128 {
+    let receipt = f.client().get_receipt(&po_id, &receipt_id);
+    assert_eq!(receipt.line_count, receipt.line_ids.len());
+    let mut expected = 0_i128;
+    for line_id in receipt.line_ids.iter() {
+        let delta = f.client().get_receipt_line(&po_id, &receipt_id, &line_id);
+        assert_eq!(delta.line_id, line_id);
+        let terms = f.client().get_line(&po_id, &line_id);
+        expected = expected
+            .checked_add(
+                i128::from(delta.quantity_delta)
+                    .checked_mul(terms.unit_price)
+                    .expect("raw quantity × stored price fits"),
+            )
+            .expect("raw receipt total fits");
+    }
+    expected
+}
+
+fn independently_calculate_accepted_value(f: &Fixture, po_id: u64) -> i128 {
+    let po = header(f, po_id);
+    assert_eq!(po.line_count, po.line_ids.len());
+    let mut expected = 0_i128;
+    for line_id in po.line_ids.iter() {
+        let line = f.client().get_line(&po_id, &line_id);
+        expected = expected
+            .checked_add(
+                i128::from(line.accepted_quantity)
+                    .checked_mul(line.unit_price)
+                    .expect("raw accepted quantity × stored price fits"),
+            )
+            .expect("raw accepted total fits");
+    }
+    expected
+}
+
 fn create_funded_po(f: &Fixture, po_id: u64, lines: &Vec<LineInput>) {
     let admin = StellarAssetClient::new(&f.env, &f.token);
     admin.mock_all_auths().mint(&f.buyer, &1_000);
@@ -1279,26 +1317,56 @@ fn flagship_partial_and_final_receipts_settle_quantity_derived_values() {
     let initial_buyer = token_balance(&f, &f.buyer);
     let initial_supplier = token_balance(&f, &f.supplier);
     let initial_contract = token_balance(&f, &f.contract);
+    let po_before = header(&f, 90);
+    assert_eq!(po_before.total_value, 100);
+    assert_eq!(po_before.funded_value, 100);
+    assert_eq!(po_before.paid_value, 0);
+    assert_eq!(po_before.refunded_value, 0);
+    let line_a_terms = f.client().get_line(&90, &1);
+    let line_b_terms = f.client().get_line(&90, &2);
+    assert_eq!(line_a_terms.ordered_quantity, 10);
+    assert_eq!(line_a_terms.unit_price, 6);
+    assert_eq!(line_b_terms.ordered_quantity, 8);
+    assert_eq!(line_b_terms.unit_price, 5);
+
     let r1 = valid_receipt(&f);
     authorized_submit(&f, 90, 1, &r1);
+    let r1_record = f.client().get_receipt(&90, &1);
+    assert_eq!(r1_record.status, ReceiptStatus::Submitted);
+    assert_eq!(r1_record.line_count, 2);
+    let r1_a = f.client().get_receipt_line(&90, &1, &1);
+    let r1_b = f.client().get_receipt_line(&90, &1, &2);
+    assert_eq!(r1_a.quantity_delta, 6);
+    assert_eq!(r1_b.quantity_delta, 4);
+    let expected_r1 = independently_calculate_receipt_value(&f, 90, 1);
+    assert_eq!(expected_r1, (6_i128 * 6) + (4_i128 * 5));
+    assert_eq!(expected_r1, 56);
 
-    assert_eq!(authorized_settle(&f, 90, 1), 56);
+    assert_eq!(authorized_settle(&f, 90, 1), expected_r1);
     assert_eq!(
         f.client().get_receipt(&90, &1).status,
         ReceiptStatus::Settled
     );
     assert_eq!(f.client().get_line(&90, &1).accepted_quantity, 6);
     assert_eq!(f.client().get_line(&90, &2).accepted_quantity, 4);
-    assert_eq!(header(&f, 90).paid_value, 56);
-    assert_eq!(header(&f, 90).funded_value, 100);
-    assert_eq!(header(&f, 90).status, PoStatus::Funded);
+    let after_r1 = header(&f, 90);
+    assert_eq!(after_r1.status, PoStatus::Funded);
+    assert_eq!(after_r1.paid_value, expected_r1);
+    assert_eq!(after_r1.funded_value, 100);
+    assert_eq!(after_r1.refunded_value, 0);
+    assert_eq!(
+        independently_calculate_accepted_value(&f, 90),
+        after_r1.paid_value
+    );
     assert_eq!(token_balance(&f, &f.buyer), initial_buyer);
-    assert_eq!(token_balance(&f, &f.supplier), initial_supplier + 56);
-    assert_eq!(token_balance(&f, &f.contract), initial_contract - 56);
-    assert_eq!(f.client().receipt_value(&90, &1), 56);
-    let accepted_value = f.client().get_line(&90, &1).accepted_quantity as i128 * 6
-        + f.client().get_line(&90, &2).accepted_quantity as i128 * 5;
-    assert_eq!(header(&f, 90).paid_value, accepted_value);
+    assert_eq!(
+        token_balance(&f, &f.supplier),
+        initial_supplier + expected_r1
+    );
+    assert_eq!(
+        token_balance(&f, &f.contract),
+        initial_contract - expected_r1
+    );
 
     let r2 = soroban_sdk::vec![
         &f.env,
@@ -1312,18 +1380,39 @@ fn flagship_partial_and_final_receipts_settle_quantity_derived_values() {
         },
     ];
     authorized_submit(&f, 90, 2, &r2);
-    assert_eq!(authorized_settle(&f, 90, 2), 44);
+    let r2_record = f.client().get_receipt(&90, &2);
+    assert_eq!(r2_record.status, ReceiptStatus::Submitted);
+    assert_eq!(r2_record.line_count, 2);
+    assert_eq!(f.client().get_receipt_line(&90, &2, &1).quantity_delta, 4);
+    assert_eq!(f.client().get_receipt_line(&90, &2, &2).quantity_delta, 4);
+    let expected_r2 = independently_calculate_receipt_value(&f, 90, 2);
+    assert_eq!(expected_r2, (4_i128 * 6) + (4_i128 * 5));
+    assert_eq!(expected_r2, 44);
+
+    assert_eq!(authorized_settle(&f, 90, 2), expected_r2);
     assert_eq!(
         f.client().get_receipt(&90, &2).status,
         ReceiptStatus::Settled
     );
     assert_eq!(f.client().get_line(&90, &1).accepted_quantity, 10);
     assert_eq!(f.client().get_line(&90, &2).accepted_quantity, 8);
-    assert_eq!(header(&f, 90).paid_value, 100);
-    assert_eq!(header(&f, 90).funded_value, 100);
-    assert_eq!(token_balance(&f, &f.supplier), initial_supplier + 100);
-    assert_eq!(token_balance(&f, &f.contract), initial_contract - 100);
-    assert_eq!(header(&f, 90).paid_value, 10 * 6 + 8 * 5);
+    let final_po = header(&f, 90);
+    assert_eq!(final_po.status, PoStatus::Closed);
+    assert_eq!(final_po.total_value, 100);
+    assert_eq!(final_po.funded_value, 100);
+    assert_eq!(final_po.paid_value, expected_r1 + expected_r2);
+    assert_eq!(final_po.paid_value, 100);
+    assert_eq!(final_po.refunded_value, 0);
+    assert_eq!(independently_calculate_accepted_value(&f, 90), 100);
+    assert_eq!(token_balance(&f, &f.buyer), initial_buyer);
+    assert_eq!(
+        token_balance(&f, &f.supplier),
+        initial_supplier + expected_r1 + expected_r2
+    );
+    assert_eq!(
+        token_balance(&f, &f.contract),
+        initial_contract - expected_r1 - expected_r2
+    );
 }
 
 #[test]

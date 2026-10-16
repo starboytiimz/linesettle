@@ -1,0 +1,8 @@
+/target/
+*.wasm
+.codex/
+**/test_snapshots/
+.env
+.env.*
+*.log
+.DS_Store

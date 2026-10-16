@@ -148,7 +148,30 @@ jobs:
             stellar --config-dir "$STELLAR_CONFIG_DIR" keys generate "$identity"
           done
           for identity in stage6-issuer stage6-buyer stage6-supplier; do
-            stellar --config-dir "$STELLAR_CONFIG_DIR" keys fund --network local "$identity"
+            address=$(stellar --config-dir "$STELLAR_CONFIG_DIR" keys public-key "$identity")
+            # Use Quickstart's local Friendbot HTTP endpoint directly. The
+            # Stellar CLI's keys fund response parser has intermittently
+            # rejected otherwise usable Friendbot responses; confirm funding
+            # independently by waiting for the account to appear in Horizon.
+            curl --silent --show-error --fail \
+              --output "$RUNNER_TEMP/friendbot-${identity}.json" \
+              "http://localhost:8000/friendbot?addr=$address"
+            account_ready=false
+            for attempt in $(seq 1 15); do
+              if curl --silent --show-error --fail \
+                  "http://localhost:8000/accounts/$address" \
+                  --output "$RUNNER_TEMP/account-${identity}.json" \
+                && jq -e --arg address "$address" '.account_id == $address' \
+                  "$RUNNER_TEMP/account-${identity}.json" >/dev/null; then
+                account_ready=true
+                break
+              fi
+              sleep 1
+            done
+            if [ "$account_ready" != true ]; then
+              echo "Quickstart did not expose funded account $identity through Horizon" >&2
+              exit 1
+            fi
           done
           issuer=$(stellar --config-dir "$STELLAR_CONFIG_DIR" keys public-key stage6-issuer)
           buyer=$(stellar --config-dir "$STELLAR_CONFIG_DIR" keys public-key stage6-buyer)

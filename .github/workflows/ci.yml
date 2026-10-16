@@ -29,7 +29,9 @@ jobs:
         run: cargo +1.95.0 test --workspace --locked
 
       - name: Install pinned Stellar CLI
-        run: cargo +1.95.0 install --locked --version 28.1.0 stellar-cli
+        uses: stellar/stellar-cli@c0f4d0da891bbf214c08b8c5035ae6db80e9a3bd
+        with:
+          version: 28.1.0
 
       - name: Verify Stellar CLI version
         run: |

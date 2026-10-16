@@ -55,10 +55,6 @@ jobs:
   flagship:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    env:
-      STELLAR_CONFIG_DIR: ${{ runner.temp }}/stellar-stage6-config
-      REPORT_DIR: ${{ runner.temp }}/linesettle-stage6-reports
-      QUICKSTART_CONTAINER: stellar-linesettle-stage6
     steps:
       - name: Checkout exact PR head revision
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -72,6 +68,13 @@ jobs:
           actual=$(git rev-parse HEAD)
           echo "Checked out $actual"
           test "$actual" = "$EXPECTED_HEAD"
+
+      - name: Configure hosted proof paths
+        shell: bash
+        run: |
+          echo "STELLAR_CONFIG_DIR=$RUNNER_TEMP/stellar-stage6-config" >> "$GITHUB_ENV"
+          echo "REPORT_DIR=$RUNNER_TEMP/linesettle-stage6-reports" >> "$GITHUB_ENV"
+          echo "QUICKSTART_CONTAINER=stellar-linesettle-stage6" >> "$GITHUB_ENV"
 
       - name: Install pinned Rust and WASM target
         run: |

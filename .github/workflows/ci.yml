@@ -149,15 +149,20 @@ jobs:
           done
           for identity in stage6-issuer stage6-buyer stage6-supplier; do
             address=$(stellar --config-dir "$STELLAR_CONFIG_DIR" keys public-key "$identity")
-            # Use Quickstart's local Friendbot HTTP endpoint directly. The
-            # Stellar CLI's keys fund response parser has intermittently
-            # rejected otherwise usable Friendbot responses; confirm funding
-            # independently by waiting for the account to appear in Horizon.
-            curl --silent --show-error --fail \
-              --output "$RUNNER_TEMP/friendbot-${identity}.json" \
-              "http://localhost:8000/friendbot?addr=$address"
+            # Quickstart Friendbot can transiently return 502, and the CLI's
+            # keys fund parser has rejected otherwise usable responses. Retry
+            # the local endpoint, but accept funding only after Horizon confirms
+            # the generated account exists.
             account_ready=false
-            for attempt in $(seq 1 15); do
+            for attempt in $(seq 1 5); do
+              if friendbot_status=$(curl --silent --show-error \
+                  --output "$RUNNER_TEMP/friendbot-${identity}.json" \
+                  --write-out '%{http_code}' \
+                  "http://localhost:8000/friendbot?addr=$address"); then
+                echo "Friendbot HTTP $friendbot_status for $identity (attempt $attempt)"
+              else
+                echo "Friendbot request failed for $identity (attempt $attempt)" >&2
+              fi
               if curl --silent --show-error --fail \
                   "http://localhost:8000/accounts/$address" \
                   --output "$RUNNER_TEMP/account-${identity}.json" \
@@ -166,7 +171,7 @@ jobs:
                 account_ready=true
                 break
               fi
-              sleep 1
+              if [ "$attempt" -lt 5 ]; then sleep 2; fi
             done
             if [ "$account_ready" != true ]; then
               echo "Quickstart did not expose funded account $identity through Horizon" >&2

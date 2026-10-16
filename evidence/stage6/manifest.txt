@@ -1,0 +1,37 @@
+LineSettle hosted flagship proof evidence manifest
+
+Producer source SHA: a1463f3d8f5fea7303567d4233e6e88fcfafbb6a
+Workflow run: https://github.com/starboytiimz/linesettle/actions/runs/38977916518
+Workflow run ID: 38977916518
+verify job ID: 117232750103 (success)
+flagship job ID: 117232748876 (success)
+Uploaded artifact name: linesettle-hosted-flagship-proof
+Uploaded artifact ID: 12080300509
+Artifact file captured: proof-script-1792191232314840790.log (134044 bytes)
+Preserved file: hosted-flagship-proof.txt (runner absolute paths normalized)
+
+Captured toolchain/environment:
+Rust 1.95.0
+Cargo 1.95.0
+soroban-sdk 28.0.0
+Stellar CLI 28.1.0
+wasm32v1-none
+GitHub-hosted Ubuntu 24.04
+Standalone local Stellar network, protocol 28
+
+WASM filename: linesettle.wasm
+WASM size: 24387 bytes
+WASM SHA-256: 13f3858854c028c9b7eaf31ef3fb172dd6b830aa30e29980f610ad298fb66524
+
+Quickstart requested image: stellar/quickstart:latest
+Resolved image digest recorded by run: sha256:4f8dfd693deba57fddef7f0bc722e4782c2e606c8675e3adc5438cebae249295
+The workflow requested a floating tag; the recorded digest identifies this execution.
+
+SHA-256 of preserved raw proof log:
+32c756b8667a3286124a0338ebb1462709ffaf1531325d43ab33ebd42bceb591  hosted-flagship-proof.txt
+
+Interpretation: these checksums identify preserved bytes; they do not by
+themselves establish that the experiment was correct. The log contains the
+actual CLI outputs, balance queries, state queries, and expected failed stale
+receipt invocation from the successful run. Runner-specific absolute paths
+were normalized; command arguments and captured outputs were otherwise kept.

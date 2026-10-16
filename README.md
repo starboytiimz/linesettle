@@ -19,14 +19,12 @@ SEP-41 amount to the supplier. When every ordered quantity is accepted, the PO
 closes automatically. Buyer and supplier may also cancel an Accepted or Funded
 PO together; a Funded PO refunds only its remaining unpaid value to the buyer.
 
-## Current evidence
+## Evidence
 
-- 62 local Soroban host tests pass on this revision.
-- Rust 1.95.0, `soroban-sdk = 28.0.0`, Stellar CLI 28.1.0, and
-  `wasm32v1-none` are pinned.
-- `Cargo.lock` is committed; the contract has a locked WASM build.
-- The GitHub Actions workflow checks formatting, tests, and the locked Stellar
-  CLI contract build.
+The project has 62 host tests and a hosted local-ledger proof of quantity-based
+settlement, closeout, changed-quantity payout, and stale-receipt rejection. See
+the [evidence record](docs/EVIDENCE.md) for the exact reviewed source and WASM
+identities, raw hosted proof log, limitations, and reproduction path.
 
 Run the checks from the repository root:
 
@@ -38,7 +36,7 @@ stellar contract build --locked --package linesettle
 
 ## Limits
 
-- Evidence is local host testing; there is no Testnet or Mainnet proof yet.
+- There is no LineSettle Testnet or Mainnet contract proof.
 - The contract records supplier delivery assertions and buyer quantity
   acceptance; it does not automatically verify physical delivery.
 - There is no dispute arbitration, invoice financing, factoring, or PO
@@ -46,6 +44,6 @@ stellar contract build --locked --package linesettle
 - Each PO is limited to eight lines.
 - Compatibility has been tested with the pinned SDK host and its Stellar Asset
   Contract fixture, not broadly with custom SEP-41 tokens.
-- The Stage 2F closeout and cancellation behavior has local host-test evidence;
-  live-network behavior is not verified.
+- Cancellation is covered by local host tests but has not been demonstrated in
+  the CLI local-ledger proof.
 - No `LICENSE` has been selected yet.

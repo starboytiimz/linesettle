@@ -21,7 +21,7 @@ PO together; a Funded PO refunds only its remaining unpaid value to the buyer.
 
 ## Current evidence
 
-- 62 local Soroban host tests pass on this branch.
+- 62 local Soroban host tests pass on this revision.
 - Rust 1.95.0, `soroban-sdk = 28.0.0`, Stellar CLI 28.1.0, and
   `wasm32v1-none` are pinned.
 - `Cargo.lock` is committed; the contract has a locked WASM build.

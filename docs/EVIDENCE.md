@@ -172,9 +172,15 @@ run reproduced 56 then 44, Closed / paid 100 / refunded 0, the changed-quantity
 50 payout, and stale-receipt exit 1 with `QuantityExceedsRemaining`; all
 compared economic state and settlement-asset balances were unchanged after the
 stale failure. Three independent control deployments reproduced the 56/44
-terminal result. The hosted TTL repair run is linked from the pull request once
-available; the historical proof identities above remain attributed to their
-original source revisions.
+terminal result. The hosted PR run
+[`39027872531`](https://github.com/starboytiimz/linesettle/actions/runs/39027872531)
+checked out source `42197f30a30979f7b2976cb04b8af2d1155d75e8`; its `verify`
+job [`117382327373`](https://github.com/starboytiimz/linesettle/actions/runs/39027872531/job/117382327373)
+and `flagship` job
+[`117382327538`](https://github.com/starboytiimz/linesettle/actions/runs/39027872531/job/117382327538)
+both succeeded. That hosted execution produced the same WASM identity and
+reproduced the local semantic results above. The historical proof identities
+above remain attributed to their original source revisions.
 
 This policy does not make storage permanent. Sufficient inactivity can still
 archive persistent entries; those entries must be restored through normal

@@ -99,8 +99,8 @@ jobs:
         run: |
           stellar contract build --locked --package linesettle
           sha256sum target/wasm32v1-none/release/linesettle.wasm
-          test "$(stat -c '%s' target/wasm32v1-none/release/linesettle.wasm)" = "24387"
-          test "$(sha256sum target/wasm32v1-none/release/linesettle.wasm | awk '{print $1}')" = "13f3858854c028c9b7eaf31ef3fb172dd6b830aa30e29980f610ad298fb66524"
+          test "$(stat -c '%s' target/wasm32v1-none/release/linesettle.wasm)" = "25478"
+          test "$(sha256sum target/wasm32v1-none/release/linesettle.wasm | awk '{print $1}')" = "e27caede18f9b6c6275d7076b9a671c4964a27b815329ebf399ade0e3770e339"
 
       - name: Start fresh local Stellar network
         run: |

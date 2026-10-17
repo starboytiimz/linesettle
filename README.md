@@ -21,7 +21,7 @@ PO together; a Funded PO refunds only its remaining unpaid value to the buyer.
 
 ## Evidence
 
-The project has 62 host tests and a hosted local-ledger proof of quantity-based
+The project has 64 host tests and a hosted local-ledger proof of quantity-based
 settlement, closeout, changed-quantity payout, and stale-receipt rejection. See
 the [evidence record](docs/EVIDENCE.md) for the exact reviewed source and WASM
 identities, raw hosted proof log, limitations, and reproduction path.
@@ -47,3 +47,7 @@ stellar contract build --locked --package linesettle
 - Cancellation is covered by local host tests but has not been demonstrated in
   the CLI local-ledger proof.
 - No `LICENSE` has been selected yet.
+- Active contract calls renew the contract instance/code and the relevant live
+  PO, line, receipt, and receipt-line entries to a bounded TTL window. This is
+  not permanent storage: after sufficiently long inactivity, Soroban may archive
+  an entry and an invocation will require normal ledger restoration first.

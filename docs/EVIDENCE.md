@@ -136,3 +136,53 @@ use Testnet or Mainnet for this proof.
   support PO amendments.
 - No project `LICENSE` has been selected. The source is publicly available,
   but no formal open-source license is asserted.
+
+## TTL lifecycle repair
+
+The historical evidence above describes the source and WASM tested by those
+runs. The predecessor revision did not explicitly renew Soroban storage TTLs.
+The TTL repair adds bounded renewal for the contract instance/code and each
+live business-state key needed by an active PO lifecycle. It does not make
+storage permanent. Sufficient inactivity can still archive persistent entries;
+those entries must be restored through normal Soroban transaction restoration
+before contract execution can use them. This repair does not provide an
+off-contract restoration service.
+
+The implementation source is commit
+[`40b3b12b422d2264c4509de3461c1b7efe972514`](https://github.com/starboytiimz/linesettle/commit/40b3b12b422d2264c4509de3461c1b7efe972514),
+tree `0b3363f39a380b475a7bcc61166fdb3b74d03545`. Its `linesettle.wasm` is
+25,478 bytes with SHA-256
+`e27caede18f9b6c6275d7076b9a671c4964a27b815329ebf399ade0e3770e339`.
+Two independent builds from that clean source revision with Rust/Cargo 1.95.0
+and Stellar CLI 28.1.0 produced byte-identical artifacts.
+
+The policy uses a 2,073,601-ledger renewal threshold and extends live entries
+to 2,592,000 ledgers (approximately 120 and 150 days respectively at a nominal
+five-second ledger cadence). These are ledger counts, not wall-clock
+guarantees. Public getters extend the contract instance/code but intentionally
+do not renew business records; successful state-changing lifecycle operations
+renew the header and every PO line, and receipt operations renew the receipt
+and each indexed receipt line they use. An actual committed invocation can
+therefore incur instance/code TTL writes even when it calls a getter; a
+simulation-only read does not commit that extension.
+
+The TTL-enabled artifact was also exercised on a fresh protocol-28 standalone
+network with Stellar CLI 28.1.0 and the test-only classic-asset SAC. The local
+run reproduced 56 then 44, Closed / paid 100 / refunded 0, the changed-quantity
+50 payout, and stale-receipt exit 1 with `QuantityExceedsRemaining`; all
+compared economic state and settlement-asset balances were unchanged after the
+stale failure. Three independent control deployments reproduced the 56/44
+terminal result. The hosted PR run
+[`39027872531`](https://github.com/starboytiimz/linesettle/actions/runs/39027872531)
+checked out source `42197f30a30979f7b2976cb04b8af2d1155d75e8`; its `verify`
+job [`117382327373`](https://github.com/starboytiimz/linesettle/actions/runs/39027872531/job/117382327373)
+and `flagship` job
+[`117382327538`](https://github.com/starboytiimz/linesettle/actions/runs/39027872531/job/117382327538)
+both succeeded. That hosted execution produced the same WASM identity and
+reproduced the local semantic results above. The historical proof identities
+above remain attributed to their original source revisions.
+
+This policy does not make storage permanent. Sufficient inactivity can still
+archive persistent entries; those entries must be restored through normal
+Soroban transaction restoration before contract execution can use them. The
+repair does not provide an off-contract restoration service.

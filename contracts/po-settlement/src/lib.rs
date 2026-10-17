@@ -6,6 +6,14 @@ use soroban_sdk::{contract, contracterror, contractimpl, contracttype, token, Ad
 /// this cap bounds caller input, duplicate checking, and total calculation.
 pub const MAX_LINES: u32 = 8;
 
+/// Renew contract/data TTLs when fewer than 120 days plus one ledger remain,
+/// targeting 150 days. At the usual ~5 second ledger cadence these are
+/// 2,073,601 and 2,592,000 ledgers. The target is below Stellar's currently
+/// documented 180-day maximum; sufficiently long inactivity can still archive
+/// entries.
+pub const TTL_RENEW_THRESHOLD_LEDGERS: u32 = 2_073_601;
+pub const TTL_RENEW_TO_LEDGERS: u32 = 2_592_000;
+
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u32)]
@@ -133,6 +141,7 @@ impl PoSettlement {
         token: Address,
         lines: Vec<LineInput>,
     ) -> Result<(), PoError> {
+        extend_contract_ttl(&env);
         buyer.require_auth();
 
         if po_id == 0 {
@@ -203,6 +212,11 @@ impl PoSettlement {
             line_ids,
         };
         env.storage().persistent().set(&header_key, &header);
+        env.storage().persistent().extend_ttl(
+            &header_key,
+            TTL_RENEW_THRESHOLD_LEDGERS,
+            TTL_RENEW_TO_LEDGERS,
+        );
         let mut i = 0;
         while i < lines.len() {
             let input = lines.get(i).ok_or(PoError::InvalidLine)?;
@@ -212,15 +226,20 @@ impl PoSettlement {
                 unit_price: input.unit_price,
                 accepted_quantity: 0,
             };
-            env.storage()
-                .persistent()
-                .set(&DataKey::Line(po_id, input.line_id), &line);
+            let line_key = DataKey::Line(po_id, input.line_id);
+            env.storage().persistent().set(&line_key, &line);
+            env.storage().persistent().extend_ttl(
+                &line_key,
+                TTL_RENEW_THRESHOLD_LEDGERS,
+                TTL_RENEW_TO_LEDGERS,
+            );
             i += 1;
         }
         Ok(())
     }
 
     pub fn accept_po(env: Env, po_id: u64) -> Result<(), PoError> {
+        extend_contract_ttl(&env);
         let key = DataKey::Header(po_id);
         let mut header: PurchaseOrder = env
             .storage()
@@ -231,6 +250,7 @@ impl PoSettlement {
             return Err(PoError::InvalidState);
         }
         header.supplier.require_auth();
+        extend_po_ttl(&env, &header)?;
         header.status = PoStatus::Accepted;
         env.storage().persistent().set(&key, &header);
         Ok(())
@@ -238,6 +258,7 @@ impl PoSettlement {
 
     /// Funds an accepted PO for its exact stored total from its recorded buyer.
     pub fn fund_po(env: Env, po_id: u64) -> Result<(), PoError> {
+        extend_contract_ttl(&env);
         let key = DataKey::Header(po_id);
         let mut header: PurchaseOrder = env
             .storage()
@@ -249,6 +270,7 @@ impl PoSettlement {
         }
 
         header.buyer.require_auth();
+        extend_po_ttl(&env, &header)?;
         let contract_address = env.current_contract_address();
         token::TokenClient::new(&env, &header.token).transfer(
             &header.buyer,
@@ -271,6 +293,7 @@ impl PoSettlement {
         receipt_id: u64,
         quantities: Vec<ReceiptQuantityInput>,
     ) -> Result<(), PoError> {
+        extend_contract_ttl(&env);
         let header: PurchaseOrder = env
             .storage()
             .persistent()
@@ -320,6 +343,8 @@ impl PoSettlement {
             i += 1;
         }
 
+        extend_po_ttl(&env, &header)?;
+
         let mut line_ids = Vec::new(&env);
         let mut i = 0;
         while i < quantities.len() {
@@ -334,6 +359,11 @@ impl PoSettlement {
             line_ids,
         };
         env.storage().persistent().set(&receipt_key, &receipt);
+        env.storage().persistent().extend_ttl(
+            &receipt_key,
+            TTL_RENEW_THRESHOLD_LEDGERS,
+            TTL_RENEW_TO_LEDGERS,
+        );
         let mut i = 0;
         while i < quantities.len() {
             let input = quantities.get(i).ok_or(PoError::InvalidReceipt)?;
@@ -341,9 +371,12 @@ impl PoSettlement {
                 line_id: input.line_id,
                 quantity_delta: input.quantity_delta,
             };
-            env.storage().persistent().set(
-                &DataKey::ReceiptLine(po_id, receipt_id, input.line_id),
-                &line,
+            let line_key = DataKey::ReceiptLine(po_id, receipt_id, input.line_id);
+            env.storage().persistent().set(&line_key, &line);
+            env.storage().persistent().extend_ttl(
+                &line_key,
+                TTL_RENEW_THRESHOLD_LEDGERS,
+                TTL_RENEW_TO_LEDGERS,
             );
             i += 1;
         }
@@ -352,6 +385,7 @@ impl PoSettlement {
 
     /// Buyer rejects a supplier assertion. Receipt identity remains consumed.
     pub fn reject_receipt(env: Env, po_id: u64, receipt_id: u64) -> Result<(), PoError> {
+        extend_contract_ttl(&env);
         let key = DataKey::Receipt(po_id, receipt_id);
         let mut receipt: Receipt = env
             .storage()
@@ -367,6 +401,8 @@ impl PoSettlement {
             .get(&DataKey::Header(po_id))
             .ok_or(PoError::NotFound)?;
         header.buyer.require_auth();
+        extend_po_ttl(&env, &header)?;
+        extend_receipt_ttl(&env, &receipt)?;
         receipt.status = ReceiptStatus::Rejected;
         env.storage().persistent().set(&key, &receipt);
         Ok(())
@@ -374,6 +410,7 @@ impl PoSettlement {
 
     /// Read-only calculation for a submitted receipt, rechecking current PO quantities.
     pub fn receipt_value(env: Env, po_id: u64, receipt_id: u64) -> Result<i128, PoError> {
+        extend_contract_ttl(&env);
         let receipt: Receipt = env
             .storage()
             .persistent()
@@ -399,6 +436,7 @@ impl PoSettlement {
         po_id: u64,
         receipt_id: u64,
     ) -> Result<i128, PoError> {
+        extend_contract_ttl(&env);
         let po_key = DataKey::Header(po_id);
         let mut header: PurchaseOrder = env
             .storage()
@@ -473,6 +511,9 @@ impl PoSettlement {
         {
             return Err(PoError::InvalidState);
         }
+
+        extend_po_ttl(&env, &header)?;
+        extend_receipt_ttl(&env, &receipt)?;
         header.paid_value = new_paid_value;
         if all_lines_fulfilled {
             header.status = PoStatus::Closed;
@@ -494,6 +535,7 @@ impl PoSettlement {
     /// Cancels an Accepted or Funded PO only with authorization from both
     /// recorded parties. A funded PO refunds only its unpaid, unrefunded value.
     pub fn cancel_po(env: Env, po_id: u64) -> Result<(), PoError> {
+        extend_contract_ttl(&env);
         let key = DataKey::Header(po_id);
         let mut header: PurchaseOrder = env
             .storage()
@@ -546,6 +588,7 @@ impl PoSettlement {
             _ => return Err(PoError::InvalidState),
         };
 
+        extend_po_ttl(&env, &header)?;
         header.status = PoStatus::Cancelled;
         // Persist before the outgoing transfer so the failure path exercises
         // invocation rollback for the actual cancellation operation.
@@ -562,6 +605,7 @@ impl PoSettlement {
     }
 
     pub fn get_receipt(env: Env, po_id: u64, receipt_id: u64) -> Result<Receipt, PoError> {
+        extend_contract_ttl(&env);
         env.storage()
             .persistent()
             .get(&DataKey::Receipt(po_id, receipt_id))
@@ -574,6 +618,7 @@ impl PoSettlement {
         receipt_id: u64,
         line_id: u32,
     ) -> Result<ReceiptLine, PoError> {
+        extend_contract_ttl(&env);
         env.storage()
             .persistent()
             .get(&DataKey::ReceiptLine(po_id, receipt_id, line_id))
@@ -581,6 +626,7 @@ impl PoSettlement {
     }
 
     pub fn get_po(env: Env, po_id: u64) -> Result<PurchaseOrder, PoError> {
+        extend_contract_ttl(&env);
         env.storage()
             .persistent()
             .get(&DataKey::Header(po_id))
@@ -588,11 +634,71 @@ impl PoSettlement {
     }
 
     pub fn get_line(env: Env, po_id: u64, line_id: u32) -> Result<PoLine, PoError> {
+        extend_contract_ttl(&env);
         env.storage()
             .persistent()
             .get(&DataKey::Line(po_id, line_id))
             .ok_or(PoError::NotFound)
     }
+}
+
+/// Renew the executable and instance while the instance is still live.
+fn extend_contract_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(TTL_RENEW_THRESHOLD_LEDGERS, TTL_RENEW_TO_LEDGERS);
+}
+
+/// Renew the header and every bounded line record needed for the PO lifecycle.
+fn extend_po_ttl(env: &Env, header: &PurchaseOrder) -> Result<(), PoError> {
+    let storage = env.storage().persistent();
+    let header_key = DataKey::Header(header.po_id);
+    if storage.get::<_, PurchaseOrder>(&header_key).is_none() {
+        return Err(PoError::NotFound);
+    }
+    storage.extend_ttl(
+        &header_key,
+        TTL_RENEW_THRESHOLD_LEDGERS,
+        TTL_RENEW_TO_LEDGERS,
+    );
+
+    let mut i = 0;
+    while i < header.line_count {
+        let line_id = header.line_ids.get(i).ok_or(PoError::InvalidLine)?;
+        let line_key = DataKey::Line(header.po_id, line_id);
+        if storage.get::<_, PoLine>(&line_key).is_none() {
+            return Err(PoError::NotFound);
+        }
+        storage.extend_ttl(&line_key, TTL_RENEW_THRESHOLD_LEDGERS, TTL_RENEW_TO_LEDGERS);
+        i += 1;
+    }
+    Ok(())
+}
+
+/// Renew one live receipt and each line record indexed by its bounded header.
+fn extend_receipt_ttl(env: &Env, receipt: &Receipt) -> Result<(), PoError> {
+    let storage = env.storage().persistent();
+    let receipt_key = DataKey::Receipt(receipt.po_id, receipt.receipt_id);
+    if storage.get::<_, Receipt>(&receipt_key).is_none() {
+        return Err(PoError::ReceiptNotFound);
+    }
+    storage.extend_ttl(
+        &receipt_key,
+        TTL_RENEW_THRESHOLD_LEDGERS,
+        TTL_RENEW_TO_LEDGERS,
+    );
+
+    let mut i = 0;
+    while i < receipt.line_count {
+        let line_id = receipt.line_ids.get(i).ok_or(PoError::InvalidReceipt)?;
+        let line_key = DataKey::ReceiptLine(receipt.po_id, receipt.receipt_id, line_id);
+        if storage.get::<_, ReceiptLine>(&line_key).is_none() {
+            return Err(PoError::ReceiptNotFound);
+        }
+        storage.extend_ttl(&line_key, TTL_RENEW_THRESHOLD_LEDGERS, TTL_RENEW_TO_LEDGERS);
+        i += 1;
+    }
+    Ok(())
 }
 
 fn calculate_accepted_value(env: &Env, header: &PurchaseOrder) -> Result<i128, PoError> {

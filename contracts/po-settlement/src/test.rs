@@ -1,14 +1,26 @@
 use soroban_sdk::{
     contract, contractimpl, contracttype,
-    testutils::{Address as _, IssuerFlags, MockAuth, MockAuthInvoke},
+    testutils::{
+        storage::Persistent as _, Address as _, Deployer as _, IssuerFlags, Ledger as _, MockAuth,
+        MockAuthInvoke,
+    },
     token::{StellarAssetClient, TokenClient},
     Address, Env, IntoVal, Vec,
 };
 
 use crate::{
     LineInput, PoSettlement, PoSettlementClient, PoStatus, PurchaseOrder, Receipt,
-    ReceiptQuantityInput, ReceiptStatus, MAX_LINES,
+    ReceiptQuantityInput, ReceiptStatus, MAX_LINES, TTL_RENEW_THRESHOLD_LEDGERS,
+    TTL_RENEW_TO_LEDGERS,
 };
+
+const CURRENT_NETWORK_MIN_PERSISTENT_TTL_LEDGERS: u32 = 2_073_600;
+const CURRENT_NETWORK_MAX_TTL_LEDGERS: u32 = 3_110_400;
+
+fn persistent_ttl(f: &Fixture, key: &crate::DataKey) -> u32 {
+    f.env
+        .as_contract(&f.contract, || f.env.storage().persistent().get_ttl(key))
+}
 
 // Stage 2A technical probe, intentionally test-only and outside the product API.
 #[contract]
@@ -58,6 +70,30 @@ fn fixture() -> Fixture {
         supplier,
         token,
     }
+}
+
+fn fixture_with_current_network_ttl_params() -> (Fixture, u32) {
+    let env = Env::default();
+    let sdk_default_persistent_ttl = env.ledger().get().min_persistent_entry_ttl;
+    env.ledger()
+        .set_min_persistent_entry_ttl(CURRENT_NETWORK_MIN_PERSISTENT_TTL_LEDGERS);
+    env.ledger()
+        .set_max_entry_ttl(CURRENT_NETWORK_MAX_TTL_LEDGERS);
+    let buyer = Address::generate(&env);
+    let supplier = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let token = env.register_stellar_asset_contract_v2(issuer).address();
+    let contract = env.register(PoSettlement, ());
+    (
+        Fixture {
+            env,
+            contract,
+            buyer,
+            supplier,
+            token,
+        },
+        sdk_default_persistent_ttl,
+    )
 }
 
 impl Fixture {
@@ -325,6 +361,188 @@ fn valid_po_creation_derives_total_and_stores_terms() {
     assert_eq!(f.client().get_line(&41, &2).accepted_quantity, 0);
     assert_eq!(f.client().get_line(&41, &2).ordered_quantity, 8);
     assert_eq!(f.client().get_line(&41, &2).unit_price, 5);
+}
+
+#[test]
+fn ttl_policy_covers_full_lifecycle_beyond_default_boundary_and_rebumps() {
+    let (f, sdk_default_persistent_ttl) = fixture_with_current_network_ttl_params();
+    let lines = valid_lines(&f.env);
+    let default_persistent_ttl = f.env.ledger().get().min_persistent_entry_ttl;
+    assert_eq!(sdk_default_persistent_ttl, 4_096);
+    assert_eq!(
+        default_persistent_ttl,
+        CURRENT_NETWORK_MIN_PERSISTENT_TTL_LEDGERS
+    );
+
+    StellarAssetClient::new(&f.env, &f.token)
+        .mock_all_auths()
+        .mint(&f.buyer, &1_000);
+
+    authorized_create(&f, 801, &lines);
+    let header_key = crate::DataKey::Header(801);
+    let line_a_key = crate::DataKey::Line(801, 1);
+    let line_b_key = crate::DataKey::Line(801, 2);
+    assert!(persistent_ttl(&f, &header_key) >= TTL_RENEW_TO_LEDGERS);
+    assert!(persistent_ttl(&f, &line_a_key) >= TTL_RENEW_TO_LEDGERS);
+    assert!(persistent_ttl(&f, &line_b_key) >= TTL_RENEW_TO_LEDGERS);
+    assert!(f.env.deployer().get_contract_instance_ttl(&f.contract) >= TTL_RENEW_TO_LEDGERS);
+    assert!(f.env.deployer().get_contract_code_ttl(&f.contract) >= TTL_RENEW_TO_LEDGERS);
+
+    authorized_accept(&f, 801);
+    f.client().mock_all_auths().fund_po(&801);
+    let r1 = valid_receipt(&f);
+    authorized_submit(&f, 801, 1, &r1);
+    let receipt_key = crate::DataKey::Receipt(801, 1);
+    let receipt_line_a_key = crate::DataKey::ReceiptLine(801, 1, 1);
+    let receipt_line_b_key = crate::DataKey::ReceiptLine(801, 1, 2);
+    for key in [&receipt_key, &receipt_line_a_key, &receipt_line_b_key] {
+        assert!(persistent_ttl(&f, key) >= TTL_RENEW_TO_LEDGERS);
+    }
+
+    // The SDK host defaults to 4,096 ledgers. Configure its current-network
+    // persistent minimum (120 days), move beyond that unextended boundary, then
+    // continue the real funded receipt settlement while the explicit 150-day
+    // policy keeps every required entry live.
+    let old_sequence = f.env.ledger().sequence();
+    f.env
+        .ledger()
+        .set_sequence_number(old_sequence + default_persistent_ttl + 1);
+    for key in [
+        &header_key,
+        &line_a_key,
+        &line_b_key,
+        &receipt_key,
+        &receipt_line_a_key,
+        &receipt_line_b_key,
+    ] {
+        assert!(persistent_ttl(&f, key) > 0);
+    }
+    assert_eq!(authorized_settle(&f, 801, 1), 56);
+    assert_eq!(header(&f, 801).paid_value, 56);
+    assert_eq!(
+        f.client().get_receipt(&801, &1).status,
+        ReceiptStatus::Settled
+    );
+    for key in [
+        &header_key,
+        &line_a_key,
+        &line_b_key,
+        &receipt_key,
+        &receipt_line_a_key,
+        &receipt_line_b_key,
+    ] {
+        assert!(persistent_ttl(&f, key) > default_persistent_ttl);
+    }
+
+    // Advance the PO records to just below the renewal threshold. Submitting
+    // the next live receipt must re-bump the header and every PO line, including
+    // a line not otherwise touched by a partial receipt.
+    let line_ttl = persistent_ttl(&f, &line_a_key);
+    assert!(line_ttl > TTL_RENEW_THRESHOLD_LEDGERS);
+    let ledgers_to_threshold = line_ttl - TTL_RENEW_THRESHOLD_LEDGERS + 1;
+    f.env
+        .ledger()
+        .set_sequence_number(f.env.ledger().sequence() + ledgers_to_threshold);
+    let ttl_below_threshold = persistent_ttl(&f, &line_a_key);
+    assert!(ttl_below_threshold < TTL_RENEW_THRESHOLD_LEDGERS);
+
+    let final_receipt = soroban_sdk::vec![
+        &f.env,
+        ReceiptQuantityInput {
+            line_id: 1,
+            quantity_delta: 4,
+        },
+        ReceiptQuantityInput {
+            line_id: 2,
+            quantity_delta: 4,
+        },
+    ];
+    authorized_submit(&f, 801, 2, &final_receipt);
+    assert!(persistent_ttl(&f, &header_key) >= TTL_RENEW_TO_LEDGERS);
+    assert!(persistent_ttl(&f, &line_a_key) >= TTL_RENEW_TO_LEDGERS);
+    assert!(persistent_ttl(&f, &line_b_key) >= TTL_RENEW_TO_LEDGERS);
+    let final_receipt_key = crate::DataKey::Receipt(801, 2);
+    let final_receipt_line_a_key = crate::DataKey::ReceiptLine(801, 2, 1);
+    let final_receipt_line_b_key = crate::DataKey::ReceiptLine(801, 2, 2);
+    for key in [
+        &final_receipt_key,
+        &final_receipt_line_a_key,
+        &final_receipt_line_b_key,
+    ] {
+        assert!(persistent_ttl(&f, key) >= TTL_RENEW_TO_LEDGERS);
+    }
+
+    assert_eq!(authorized_settle(&f, 801, 2), 44);
+    assert_eq!(header(&f, 801).status, PoStatus::Closed);
+    assert_eq!(header(&f, 801).paid_value, 100);
+    assert_eq!(header(&f, 801).refunded_value, 0);
+    assert_eq!(
+        f.client().get_receipt(&801, &2).status,
+        ReceiptStatus::Settled
+    );
+    assert!(persistent_ttl(&f, &header_key) > 0);
+    assert_po_conservation(&f, 801);
+}
+
+#[test]
+fn ttl_getters_do_not_renew_business_records_but_active_write_does() {
+    let (f, _) = fixture_with_current_network_ttl_params();
+    funded_flagship(&f, 802);
+    let receipt_lines = valid_receipt(&f);
+    authorized_submit(&f, 802, 1, &receipt_lines);
+
+    let header_key = crate::DataKey::Header(802);
+    let line_a_key = crate::DataKey::Line(802, 1);
+    let line_b_key = crate::DataKey::Line(802, 2);
+    let receipt_key = crate::DataKey::Receipt(802, 1);
+    let receipt_line_a_key = crate::DataKey::ReceiptLine(802, 1, 1);
+    let receipt_line_b_key = crate::DataKey::ReceiptLine(802, 1, 2);
+    let advance = TTL_RENEW_TO_LEDGERS - TTL_RENEW_THRESHOLD_LEDGERS / 2;
+    f.env
+        .ledger()
+        .set_sequence_number(f.env.ledger().sequence() + advance);
+    let before_header_ttl = persistent_ttl(&f, &header_key);
+    let before_line_a_ttl = persistent_ttl(&f, &line_a_key);
+    let before_line_b_ttl = persistent_ttl(&f, &line_b_key);
+    let before_receipt_ttl = persistent_ttl(&f, &receipt_key);
+    let before_receipt_line_a_ttl = persistent_ttl(&f, &receipt_line_a_key);
+    let before_receipt_line_b_ttl = persistent_ttl(&f, &receipt_line_b_key);
+    assert!(before_header_ttl < TTL_RENEW_THRESHOLD_LEDGERS);
+    assert!(before_line_a_ttl < TTL_RENEW_THRESHOLD_LEDGERS);
+    assert!(before_line_b_ttl < TTL_RENEW_THRESHOLD_LEDGERS);
+    assert!(before_receipt_ttl < TTL_RENEW_THRESHOLD_LEDGERS);
+    assert!(before_receipt_line_a_ttl < TTL_RENEW_THRESHOLD_LEDGERS);
+    assert!(before_receipt_line_b_ttl < TTL_RENEW_THRESHOLD_LEDGERS);
+    assert!(f.env.deployer().get_contract_instance_ttl(&f.contract) < TTL_RENEW_THRESHOLD_LEDGERS);
+    assert!(f.env.deployer().get_contract_code_ttl(&f.contract) < TTL_RENEW_THRESHOLD_LEDGERS);
+
+    assert_eq!(f.client().get_po(&802).po_id, 802);
+    assert!(f.env.deployer().get_contract_instance_ttl(&f.contract) >= TTL_RENEW_TO_LEDGERS);
+    assert!(f.env.deployer().get_contract_code_ttl(&f.contract) >= TTL_RENEW_TO_LEDGERS);
+    assert_eq!(f.client().get_line(&802, &1).ordered_quantity, 10);
+    assert_eq!(f.client().get_receipt(&802, &1).receipt_id, 1);
+    assert_eq!(f.client().get_receipt_line(&802, &1, &1).quantity_delta, 6);
+    assert_eq!(f.client().receipt_value(&802, &1), 56);
+    assert_eq!(persistent_ttl(&f, &header_key), before_header_ttl);
+    assert_eq!(persistent_ttl(&f, &line_a_key), before_line_a_ttl);
+    assert_eq!(persistent_ttl(&f, &line_b_key), before_line_b_ttl);
+    assert_eq!(persistent_ttl(&f, &receipt_key), before_receipt_ttl);
+    assert_eq!(
+        persistent_ttl(&f, &receipt_line_a_key),
+        before_receipt_line_a_ttl
+    );
+    assert_eq!(
+        persistent_ttl(&f, &receipt_line_b_key),
+        before_receipt_line_b_ttl
+    );
+
+    assert_eq!(authorized_settle(&f, 802, 1), 56);
+    assert!(persistent_ttl(&f, &header_key) >= TTL_RENEW_TO_LEDGERS);
+    assert!(persistent_ttl(&f, &line_a_key) >= TTL_RENEW_TO_LEDGERS);
+    assert!(persistent_ttl(&f, &line_b_key) >= TTL_RENEW_TO_LEDGERS);
+    assert!(persistent_ttl(&f, &receipt_key) >= TTL_RENEW_TO_LEDGERS);
+    assert!(persistent_ttl(&f, &receipt_line_a_key) >= TTL_RENEW_TO_LEDGERS);
+    assert!(persistent_ttl(&f, &receipt_line_b_key) >= TTL_RENEW_TO_LEDGERS);
 }
 
 #[test]
@@ -1746,6 +1964,10 @@ fn maximum_reachable_receipt_value_settles_without_overflow() {
 #[test]
 fn failed_sac_outgoing_authorization_rolls_back_product_settlement() {
     let env = Env::default();
+    env.ledger()
+        .set_min_persistent_entry_ttl(CURRENT_NETWORK_MIN_PERSISTENT_TTL_LEDGERS);
+    env.ledger()
+        .set_max_entry_ttl(CURRENT_NETWORK_MAX_TTL_LEDGERS);
     let buyer = Address::generate(&env);
     let supplier = Address::generate(&env);
     let issuer = Address::generate(&env);
@@ -1780,6 +2002,26 @@ fn failed_sac_outgoing_authorization_rolls_back_product_settlement() {
     let buyer_before = token_balance(&f, &f.buyer);
     let supplier_before = token_balance(&f, &f.supplier);
     let contract_before = token_balance(&f, &f.contract);
+    let instance_ttl = f.env.deployer().get_contract_instance_ttl(&f.contract);
+    let advance_to_threshold = instance_ttl - TTL_RENEW_THRESHOLD_LEDGERS + 1;
+    f.env
+        .ledger()
+        .set_sequence_number(f.env.ledger().sequence() + advance_to_threshold);
+    let ttl_before = [
+        persistent_ttl(&f, &crate::DataKey::Header(100)),
+        persistent_ttl(&f, &crate::DataKey::Line(100, 1)),
+        persistent_ttl(&f, &crate::DataKey::Line(100, 2)),
+        persistent_ttl(&f, &crate::DataKey::Receipt(100, 1)),
+        persistent_ttl(&f, &crate::DataKey::ReceiptLine(100, 1, 1)),
+        persistent_ttl(&f, &crate::DataKey::ReceiptLine(100, 1, 2)),
+    ];
+    assert!(ttl_before
+        .iter()
+        .all(|ttl| *ttl < TTL_RENEW_THRESHOLD_LEDGERS));
+    let instance_ttl_before = f.env.deployer().get_contract_instance_ttl(&f.contract);
+    let code_ttl_before = f.env.deployer().get_contract_code_ttl(&f.contract);
+    assert!(instance_ttl_before < TTL_RENEW_THRESHOLD_LEDGERS);
+    assert!(code_ttl_before < TTL_RENEW_THRESHOLD_LEDGERS);
     admin.mock_all_auths().set_authorized(&f.contract, &false);
 
     let result = f
@@ -1787,6 +2029,14 @@ fn failed_sac_outgoing_authorization_rolls_back_product_settlement() {
         .mock_all_auths()
         .try_accept_receipt_and_settle(&100, &1);
     assert!(result.is_err());
+    assert_eq!(
+        f.env.deployer().get_contract_instance_ttl(&f.contract),
+        instance_ttl_before
+    );
+    assert_eq!(
+        f.env.deployer().get_contract_code_ttl(&f.contract),
+        code_ttl_before
+    );
     assert_eq!(header(&f, 100), po_before);
     assert_eq!(f.client().get_line(&100, &1), line_a_before);
     assert_eq!(f.client().get_line(&100, &2), line_b_before);
@@ -1798,6 +2048,15 @@ fn failed_sac_outgoing_authorization_rolls_back_product_settlement() {
     assert_eq!(token_balance(&f, &f.buyer), buyer_before);
     assert_eq!(token_balance(&f, &f.supplier), supplier_before);
     assert_eq!(token_balance(&f, &f.contract), contract_before);
+    let ttl_after = [
+        persistent_ttl(&f, &crate::DataKey::Header(100)),
+        persistent_ttl(&f, &crate::DataKey::Line(100, 1)),
+        persistent_ttl(&f, &crate::DataKey::Line(100, 2)),
+        persistent_ttl(&f, &crate::DataKey::Receipt(100, 1)),
+        persistent_ttl(&f, &crate::DataKey::ReceiptLine(100, 1, 1)),
+        persistent_ttl(&f, &crate::DataKey::ReceiptLine(100, 1, 2)),
+    ];
+    assert_eq!(ttl_after, ttl_before);
 }
 
 // Preserve the Stage 2A contract-invocation rollback proof unchanged in scope.
@@ -1989,6 +2248,29 @@ fn failed_final_supplier_transfer_rolls_back_closeout_and_all_settlement_writes(
     let buyer_before = token_balance(&f, &f.buyer);
     let supplier_before = token_balance(&f, &f.supplier);
     let contract_before = token_balance(&f, &f.contract);
+    let ttl_before = [
+        persistent_ttl(&f, &crate::DataKey::Header(202)),
+        persistent_ttl(&f, &crate::DataKey::Line(202, 1)),
+        persistent_ttl(&f, &crate::DataKey::Line(202, 2)),
+        persistent_ttl(&f, &crate::DataKey::Receipt(202, 2)),
+        persistent_ttl(&f, &crate::DataKey::ReceiptLine(202, 2, 1)),
+        persistent_ttl(&f, &crate::DataKey::ReceiptLine(202, 2, 2)),
+    ];
+    let to_threshold = ttl_before[1] - TTL_RENEW_THRESHOLD_LEDGERS + 1;
+    f.env
+        .ledger()
+        .set_sequence_number(f.env.ledger().sequence() + to_threshold);
+    let ttl_before = [
+        persistent_ttl(&f, &crate::DataKey::Header(202)),
+        persistent_ttl(&f, &crate::DataKey::Line(202, 1)),
+        persistent_ttl(&f, &crate::DataKey::Line(202, 2)),
+        persistent_ttl(&f, &crate::DataKey::Receipt(202, 2)),
+        persistent_ttl(&f, &crate::DataKey::ReceiptLine(202, 2, 1)),
+        persistent_ttl(&f, &crate::DataKey::ReceiptLine(202, 2, 2)),
+    ];
+    assert!(ttl_before
+        .iter()
+        .all(|ttl| *ttl < TTL_RENEW_THRESHOLD_LEDGERS));
     admin.mock_all_auths().set_authorized(&f.contract, &false);
 
     assert!(f
@@ -2008,6 +2290,15 @@ fn failed_final_supplier_transfer_rolls_back_closeout_and_all_settlement_writes(
     assert_eq!(token_balance(&f, &f.buyer), buyer_before);
     assert_eq!(token_balance(&f, &f.supplier), supplier_before);
     assert_eq!(token_balance(&f, &f.contract), contract_before);
+    let ttl_after = [
+        persistent_ttl(&f, &crate::DataKey::Header(202)),
+        persistent_ttl(&f, &crate::DataKey::Line(202, 1)),
+        persistent_ttl(&f, &crate::DataKey::Line(202, 2)),
+        persistent_ttl(&f, &crate::DataKey::Receipt(202, 2)),
+        persistent_ttl(&f, &crate::DataKey::ReceiptLine(202, 2, 1)),
+        persistent_ttl(&f, &crate::DataKey::ReceiptLine(202, 2, 2)),
+    ];
+    assert_eq!(ttl_after, ttl_before);
     assert_po_conservation(&f, 202);
 }
 
@@ -2193,6 +2484,23 @@ fn failed_refund_transfer_rolls_back_mutual_cancellation() {
     let buyer_before = token_balance(&f, &f.buyer);
     let supplier_before = token_balance(&f, &f.supplier);
     let contract_before = token_balance(&f, &f.contract);
+    let ttl_before = [
+        persistent_ttl(&f, &crate::DataKey::Header(206)),
+        persistent_ttl(&f, &crate::DataKey::Line(206, 1)),
+        persistent_ttl(&f, &crate::DataKey::Line(206, 2)),
+    ];
+    let to_threshold = ttl_before[1] - TTL_RENEW_THRESHOLD_LEDGERS + 1;
+    f.env
+        .ledger()
+        .set_sequence_number(f.env.ledger().sequence() + to_threshold);
+    let ttl_before = [
+        persistent_ttl(&f, &crate::DataKey::Header(206)),
+        persistent_ttl(&f, &crate::DataKey::Line(206, 1)),
+        persistent_ttl(&f, &crate::DataKey::Line(206, 2)),
+    ];
+    assert!(ttl_before
+        .iter()
+        .all(|ttl| *ttl < TTL_RENEW_THRESHOLD_LEDGERS));
     admin.mock_all_auths().set_authorized(&f.contract, &false);
 
     assert!(f.client().mock_all_auths().try_cancel_po(&206).is_err());
@@ -2206,6 +2514,12 @@ fn failed_refund_transfer_rolls_back_mutual_cancellation() {
     assert_eq!(token_balance(&f, &f.buyer), buyer_before);
     assert_eq!(token_balance(&f, &f.supplier), supplier_before);
     assert_eq!(token_balance(&f, &f.contract), contract_before);
+    let ttl_after = [
+        persistent_ttl(&f, &crate::DataKey::Header(206)),
+        persistent_ttl(&f, &crate::DataKey::Line(206, 1)),
+        persistent_ttl(&f, &crate::DataKey::Line(206, 2)),
+    ];
+    assert_eq!(ttl_after, ttl_before);
     assert_po_conservation(&f, 206);
 }
 

@@ -24,8 +24,9 @@ buyer.
 
 The project has 64 host tests and a hosted local-ledger proof of quantity-based
 settlement, closeout, changed-quantity payout, and stale-receipt rejection. See
-the [evidence record](docs/EVIDENCE.md) for the exact reviewed source and WASM
-identities, raw hosted proof log, limitations, and reproduction path.
+the [evidence record](docs/EVIDENCE.md) for historical LineSettle and current
+ProcureSettle source/WASM identities, raw proof logs, limitations, and the
+reproduction path.
 
 Run the checks from the repository root:
 

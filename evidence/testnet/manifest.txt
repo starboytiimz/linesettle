@@ -1,0 +1,52 @@
+ProcureSettle public Stellar Testnet flagship proof
+
+Execution UTC: 2026-10-17T20:53:27.270728+00:00
+Repository: https://github.com/starboytiimz/procuresettle
+Producer source SHA: 1e114630cda64260235dd9f4b61456b73c56f9f9
+Producer tree: c333da06cdf60169f0b03f323da09a6f983ef521
+Main baseline SHA: 1e114630cda64260235dd9f4b61456b73c56f9f9
+Rust: rustc 1.95.0 (59807616e 2026-04-14)
+Cargo: cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+soroban-sdk: 28.0.0
+Stellar CLI: 28.1.0 (c0f4d0da891bbf214c08b8c5035ae6db80e9a3bd)
+Network: Stellar Testnet
+Protocol: 29
+Network ID: cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472
+Network passphrase: Test SDF Network ; September 2015
+RPC endpoint hostname: soroban-testnet.stellar.org
+Horizon endpoint hostname: horizon-testnet.stellar.org
+
+Public test identities (no secret material):
+Issuer: GADNRQAUDP3AWNV5A5Q26N4667LK3Z3GGYPZLER6VFONODXPZ5OVM25W
+Buyer: GANKELZRTZL4YLF4NEULEEME55P4GOBRBUEAZPDFLYEJDTZYX4BUI63Q
+Supplier: GATKN34RCG5Z3LMS7EHNPRQLWMWIOCYP73R3M3TFD7ES7LMAF6OS77IC
+Classic asset: PSET:GADNRQAUDP3AWNV5A5Q26N4667LK3Z3GGYPZLER6VFONODXPZ5OVM25W
+SAC contract: CBTMM72FRA3O6UBHGOXQ6PS2M77HHJSKGCWVNHMM7XAEUPCU54WO3SUS
+ProcureSettle contract: CB2N2TJDMINCTXWPGMDZI7LNTMQYHC5ZYTT24YJKIPRQLP5UOAUSICEG
+WASM: procuresettle.wasm; 25,484 bytes
+WASM SHA-256: 78b5c6dec22ad1cea497223ff411af544dcd1e9fd613b85514f2c5ae03873a7c
+Deployment transaction: 5135b907fb2c2d23212b99fb0a29b7e8606ba18f70c636f0b06937480032886e
+
+Semantic results (asset units are PSET base units):
+Control PO 17922697198860: funded 100; A+6/B+4 independently values and settles 56; A+4/B+4 independently values and settles 44; Closed; paid 100; refunded 0; control contract balance 0.
+Changed-quantity PO 17922700906730: same stored terms; A+5/B+4 independently values and settles 50.
+Stale PO 17922704234021: A+6/B+4 settles 56; previously valid A+5/B+1 attempt exits 1 with QuantityExceedsRemaining (PoError #14); no transaction was submitted for the rejected simulation; stale receipt remains Submitted; compared PO/line/receipt state and balances equal true.
+Whole-proof balances after the three POs: buyer 700; supplier 206; contract 94. The 1000 initial buyer units were funded across three POs; successful supplier payments total 206 and remaining contract custody is 94.
+
+Transaction hashes captured and fetched from Testnet:
+Account funding: issuer 3e846776ea75718964d939a3049ed2748c486bbb9ecf46c30a07e4f7f9236c38; buyer cd992deaf5262db243eca2c9debe1ba26c6e6a5110e5401d1b68a4ac367a08a7; supplier 3a9453bced07d08bf32c7e2e6ab5ef994c59dc1029ae79dc501d19847da6978b.
+Buyer trustline: 65d4b38fde4db43cbe09640bb58fdfe1dafac0c2851b6d44acbb06b3f89f1fc4. Supplier trustline: 0a34beab49a83cad06fc05045dd862c311bf4cdbd6a0852a86ffc472059d1fcc. SAC deployment: a0d4a83913b2749bf7573b18cb9439207cdf314dbdfa9110b252852fb8c8cf79. Initial 1000-unit classic asset issuance: 27ce637f8238b6c6f7742e6f3b3fcd7e2e23c43f6947980c3885dbf82287301e.
+
+Control PO transactions:
+create 24c1d52fab70d3189d704af9c786a9d0803dcb935b1287a453cbdec5daee8687; accept 21c8e266e6941c6816b510717883b5bb6b58e8654148adf0955924bcd1e8782f; fund 9c2a7d01cbf2757c0c0bd4b096d8d80eed1d7ac31469fb1825bbcfe6d777efa1; submit receipt 1 8aba0790100c35a01355b0af99f38b2f2ab7dee894f2d6a4b47cca2d766c7280; settle receipt 1 1bb75d3ad6733f7ce4dd132b01486ed722793b80298b54b13a9045ab90794635; submit receipt 2 4679934b078ca218841d38a36c3a08116a293012c5a8772fac33c3c99e4d37e5; settle receipt 2 eaf72b42bd918e1fa72f61a7d1d5d61b9bced2621d6a17c690881cdd56a13d1a.
+Changed PO transactions:
+create 59d1630cbb24b2aa0c76d71a2bf53e70c81ba07fd91e7a3489049b36f5533046; accept 9a81700755ceb2b17a6ee42f168f8b2a7efd70f63349e0c8abebf9241a8349b6; fund f2b847580a402dfb924ba2a88474e4a4e6c489a6c1d81f018621aa695cb13365; submit 44f128f9d5a6f0022f9aedc4850cfccf9f411801ccac9c5a8ca14ca8b6d96b40; settle 3e28fcc1a65264fa8fb8b5df19b892cebf7104925465745392df9d0e75b74a7d.
+Stale PO transactions:
+create 82f43f644a473b98b4a16cd1f4a2fab13f5e66464dc9bf0616214b1f14e99fef; accept 7d62cda55904584cd5c8d5f6dad39f919edb840640e2685294d17f2566166a56; fund aee7fa67bda36661b8477b88f68dfdf1ff70c8db5c336431d4b6106be76f325c; submit settle-first receipt 22dbf348263e6ad62a5cd8761e1da894029dfb97f6134f79e773d6e3c5f641c3; submit stale receipt af0b54fe3cc292066e9d0638c2a97766c51057b1fe0354802892cda531fcc342; settle first receipt ba4a4112e95068866595d3df8b3354b65133db9a31cc9209e7ea6d72c8c13435.
+All captured transaction results, metadata, and events are preserved in transactions.json. The stale failed simulation has no transaction hash because it was not submitted.
+
+The transcript includes actual CLI stdout/stderr for the resumed successful run. Earlier CLI response/filesystem interruptions were checked against Testnet state before resuming; they were not treated as successful business operations unless ledger state confirmed submission.
+
+Testnet is periodically reset; historical public ledger queries may eventually expire or disappear. The preserved RPC transaction payloads are the durable local record. Testnet assets have no monetary value.
+
+SHA256SUMS verifies the identity of the committed evidence bytes. A checksum alone does not prove that an experiment was correct.

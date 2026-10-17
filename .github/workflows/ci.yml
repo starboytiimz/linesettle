@@ -1,8 +1,8 @@
-name: CI
+name: ProcureSettle CI
 
 on:
   push:
-    branches: [main, stage6/hosted-flagship-proof]
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -50,7 +50,7 @@ jobs:
           test "$(stellar --version | awk 'NR == 1 { print $2 }')" = "28.1.0"
 
       - name: Build contract
-        run: stellar contract build --locked --package linesettle
+        run: stellar contract build --locked --package procuresettle
 
   flagship:
     runs-on: ubuntu-24.04
@@ -72,9 +72,9 @@ jobs:
       - name: Configure hosted proof paths
         shell: bash
         run: |
-          echo "STELLAR_CONFIG_DIR=$RUNNER_TEMP/stellar-stage6-config" >> "$GITHUB_ENV"
-          echo "REPORT_DIR=$RUNNER_TEMP/linesettle-stage6-reports" >> "$GITHUB_ENV"
-          echo "QUICKSTART_CONTAINER=stellar-linesettle-stage6" >> "$GITHUB_ENV"
+          echo "STELLAR_CONFIG_DIR=$RUNNER_TEMP/procuresettle-config" >> "$GITHUB_ENV"
+          echo "REPORT_DIR=$RUNNER_TEMP/procuresettle-reports" >> "$GITHUB_ENV"
+          echo "QUICKSTART_CONTAINER=stellar-procuresettle-local-proof" >> "$GITHUB_ENV"
 
       - name: Install pinned Rust and WASM target
         run: |
@@ -95,17 +95,17 @@ jobs:
           stellar --version
           test "$(stellar --version | awk 'NR == 1 { print $2 }')" = "28.1.0"
 
-      - name: Build LineSettle
+      - name: Build ProcureSettle
         run: |
-          stellar contract build --locked --package linesettle
-          sha256sum target/wasm32v1-none/release/linesettle.wasm
-          test "$(stat -c '%s' target/wasm32v1-none/release/linesettle.wasm)" = "25478"
-          test "$(sha256sum target/wasm32v1-none/release/linesettle.wasm | awk '{print $1}')" = "e27caede18f9b6c6275d7076b9a671c4964a27b815329ebf399ade0e3770e339"
+          stellar contract build --locked --package procuresettle
+          sha256sum target/wasm32v1-none/release/procuresettle.wasm
+          test "$(stat -c '%s' target/wasm32v1-none/release/procuresettle.wasm)" = "25484"
+          test "$(sha256sum target/wasm32v1-none/release/procuresettle.wasm | awk '{print $1}')" = "78b5c6dec22ad1cea497223ff411af544dcd1e9fd613b85514f2c5ae03873a7c"
 
       - name: Start fresh local Stellar network
         run: |
           stellar --config-dir "$STELLAR_CONFIG_DIR" container start local \
-            --name linesettle-stage6 --cpus 2 --memory 4g \
+            --name procuresettle-local-proof --cpus 2 --memory 4g \
             --protocol-version 28 --image-tag-override latest
           stellar --config-dir "$STELLAR_CONFIG_DIR" network use local
 
@@ -204,7 +204,7 @@ jobs:
         run: |
           python3 scripts/local-flagship-proof.py \
             --config-dir "$STELLAR_CONFIG_DIR" \
-            --wasm target/wasm32v1-none/release/linesettle.wasm \
+            --wasm target/wasm32v1-none/release/procuresettle.wasm \
             --report-dir "$REPORT_DIR" \
             --issuer-identity stage6-issuer \
             --buyer-identity stage6-buyer --buyer-address "$STAGE6_BUYER" \
@@ -215,8 +215,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: linesettle-hosted-flagship-proof
-          path: ${{ runner.temp }}/linesettle-stage6-reports/
+          name: procuresettle-hosted-flagship-proof
+          path: ${{ runner.temp }}/procuresettle-reports/
           if-no-files-found: ignore
           retention-days: 30
 
@@ -225,5 +225,5 @@ jobs:
         shell: bash
         run: |
           if docker container inspect "$QUICKSTART_CONTAINER" >/dev/null 2>&1; then
-            stellar --config-dir "$STELLAR_CONFIG_DIR" container stop linesettle-stage6
+            stellar --config-dir "$STELLAR_CONFIG_DIR" container stop procuresettle-local-proof
           fi

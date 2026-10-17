@@ -1,8 +1,13 @@
-# LineSettle evidence
+# ProcureSettle evidence
+
+> **Project identity:** The product was renamed from LineSettle to ProcureSettle
+> after the historical evidence below was produced. Pre-rename proof retains the
+> LineSettle name and artifact identity; proof produced after the rename uses
+> ProcureSettle. Historical source SHAs and hashes are preserved as recorded.
 
 ## Product claim
 
-LineSettle settles a fully funded purchase order by calculating supplier
+ProcureSettle settles a fully funded purchase order by calculating supplier
 payouts from buyer-accepted per-line receipt quantities using immutable stored
 unit prices.
 
@@ -108,7 +113,7 @@ Python 3, and Docker. From the repository root:
 ```sh
 cargo +1.95.0 fmt --all -- --check
 cargo +1.95.0 test --workspace --locked
-stellar contract build --locked --package linesettle
+stellar contract build --locked --package procuresettle
 ```
 
 For the full local ledger proof, use the `flagship` job in
@@ -124,10 +129,15 @@ use Testnet or Mainnet for this proof.
 ## Scope and limitations
 
 - No independent external-project compatibility proof has been completed.
-  Stage 7 found no legitimate target; Stage 8 is blocked and was not executed.
+  An earlier exact-match Stage 7 search found no legitimate external target,
+  so Stage 8 was not executed at that time. Subsequent demand research
+  identified credible adjacent Stellar-native procurement/commerce workflows
+  that may serve as compatibility targets. No ProcureSettle external-project
+  compatibility proof, adoption, endorsement, or upstream integration is
+  claimed yet.
 - There is no physical-delivery proof: receipt quantities are submitted by the
   supplier and accepted by the buyer.
-- No LineSettle Testnet or Mainnet contract proof has been completed.
+- No ProcureSettle Testnet or Mainnet contract proof has been completed.
 - Cancellation is covered by host tests but has not been demonstrated through
   the CLI local-ledger proof.
 - Broad compatibility with arbitrary custom SEP-41 tokens is not claimed; the
@@ -186,3 +196,35 @@ This policy does not make storage permanent. Sufficient inactivity can still
 archive persistent entries; those entries must be restored through normal
 Soroban transaction restoration before contract execution can use them. The
 repair does not provide an off-contract restoration service.
+
+## Current ProcureSettle artifact
+
+The product was renamed from LineSettle without changing settlement behavior.
+The first ProcureSettle release build was produced from source revision
+[`2e91c98440b20d26165bfe21186ded607072234c`](https://github.com/starboytiimz/linesettle/commit/2e91c98440b20d26165bfe21186ded607072234c),
+tree `d6b008c68a4a3ad82d2af8d96ff9d007c5f62fe6`. The package is `procuresettle`
+and the artifact is `target/wasm32v1-none/release/procuresettle.wasm`, 25,484
+bytes, SHA-256
+`78b5c6dec22ad1cea497223ff411af544dcd1e9fd613b85514f2c5ae03873a7c`.
+Rust/Cargo 1.95.0, `soroban-sdk` 28.0.0, Stellar CLI 28.1.0, and
+`wasm32v1-none` were used. The workspace has 64 passing host tests, including
+the TTL ledger-advance and rollback tests.
+
+A real local protocol-28 standalone execution using a locally issued classic
+asset wrapped as a SAC re-proved the renamed artifact. It settled 56 then 44
+for the canonical A10x6 / B8x5 PO, closed with paid 100/refunded 0, settled 50
+for changed receipt quantities A5/B4, and rejected the stale A5/B1 receipt
+with process exit 1 / `QuantityExceedsRemaining` (#14), with no compared
+economic state or balance mutation. Three repeat controls also reproduced
+56/44 and the same terminal accounting. Full raw CLI output, source/tool/image
+provenance, deployment and SAC IDs, and checksums are preserved in
+[`evidence/procuresettle/`](../evidence/procuresettle/). The fresh network used
+`stellar/quickstart:latest`, resolved for this run to
+`sha256:4f8dfd693deba57fddef7f0bc722e4782c2e606c8675e3adc5438cebae249295`;
+the tag remains floating.
+
+The earlier 24,387-byte `linesettle.wasm` and SHA-256
+`13f3858854c028c9b7eaf31ef3fb172dd6b830aa30e29980f610ad298fb66524` remain
+the historical LineSettle artifact identity. Pre-rename proof logs and
+manifests are unchanged. The package rename changes the generated artifact
+identity while preserving the contract's settlement semantics.

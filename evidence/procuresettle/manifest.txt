@@ -1,0 +1,36 @@
+ProcureSettle local flagship proof
+
+Producer source SHA: 2e91c98440b20d26165bfe21186ded607072234c
+Producer tree: d6b008c68a4a3ad82d2af8d96ff9d007c5f62fe6
+Execution time: 2026-10-17T18:54Z (UTC, local developer-run evidence)
+Network: fresh Stellar Quickstart standalone; protocol 28
+Quickstart requested tag: stellar/quickstart:latest (floating)
+Quickstart resolved image: stellar/quickstart@sha256:4f8dfd693deba57fddef7f0bc722e4782c2e606c8675e3adc5438cebae249295
+Quickstart image labels: version 24.04; revision 91a64b5da2d7926bc82ae5a1f06048ef08cdcec2
+Rust: 1.95.0
+Cargo: 1.95.0
+soroban-sdk: 28.0.0
+Stellar CLI: 28.1.0 (c0f4d0da891bbf214c08b8c5035ae6db80e9a3bd)
+WASM filename: procuresettle.wasm
+WASM path: target/wasm32v1-none/release/procuresettle.wasm
+WASM size: 25,484 bytes
+WASM SHA-256: 78b5c6dec22ad1cea497223ff411af544dcd1e9fd613b85514f2c5ae03873a7c
+Host test count at producer revision: 64 passed
+Primary ProcureSettle deployment ID: CARTAOBTFH4WCRP6GH6OLZLUZIWRACKSCMGN5N7VJNYMONYWO4DYQ5AM
+Settlement asset: local classic asset PSP:GCGJW6X3PNDW5XB2LCMV7BTNH36JBRDUMH2RSH2CJECPC2UDZGQCPSOR
+Settlement SAC ID: CA7EDKCXAK2VOAGLIO3ZPL3Z7APT7RYXJ2FYYRQHQ67D3TDUFGRJYO5V
+
+Semantic result:
+- Control A10x6 / B8x5, total 100: first receipt A6/B4 paid 56; final A4/B4 paid 44.
+- Final control status Closed; funded 100; paid 100; refunded 0; contract balance 0.
+- Same stored terms, changed receipt A5/B4 paid 50.
+- Stale receipt A5/B1 after control A6/B4: CLI process exit 1, QuantityExceedsRemaining (PoError #14); pre/post comparison equal for PO, line quantities, receipt state and buyer/supplier/contract token balances.
+- Three repeat control deployments each paid 56 then 44 and closed with paid 100/refunded 0.
+
+Raw output: `local-flagship-proof.txt`. It contains the real Stellar CLI
+commands/output and state/balance comparisons. Machine-specific absolute paths
+were replaced with `<repository-root>` and `<local-config>`; command semantics,
+contract outputs, asset/contract IDs and measured values were retained. No
+private keys or seed phrases are included. File checksums are in
+`SHA256SUMS`. A checksum identifies bytes; it does not alone establish that an
+experiment was correct.

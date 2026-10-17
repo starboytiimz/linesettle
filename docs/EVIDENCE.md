@@ -1,7 +1,7 @@
 # ProcureSettle evidence
 
-> **Project identity:** The repository was renamed to ProcureSettle after the
-> historical evidence below was produced. Pre-rename proof retains the
+> **Project identity:** The product was renamed from LineSettle to ProcureSettle
+> after the historical evidence below was produced. Pre-rename proof retains the
 > LineSettle name and artifact identity; proof produced after the rename uses
 > ProcureSettle. Historical source SHAs and hashes are preserved as recorded.
 
@@ -129,7 +129,12 @@ use Testnet or Mainnet for this proof.
 ## Scope and limitations
 
 - No independent external-project compatibility proof has been completed.
-  Stage 7 found no legitimate target; Stage 8 is blocked and was not executed.
+  An earlier exact-match Stage 7 search found no legitimate external target,
+  so Stage 8 was not executed at that time. Subsequent demand research
+  identified credible adjacent Stellar-native procurement/commerce workflows
+  that may serve as compatibility targets. No ProcureSettle external-project
+  compatibility proof, adoption, endorsement, or upstream integration is
+  claimed yet.
 - There is no physical-delivery proof: receipt quantities are submitted by the
   supplier and accepted by the buyer.
 - No ProcureSettle Testnet or Mainnet contract proof has been completed.

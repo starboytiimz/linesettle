@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run LineSettle's local CLI proof using pre-funded test identities and an SAC.
+"""Run ProcureSettle's local CLI proof using pre-funded test identities and an SAC.
 
 Prerequisites: Stellar CLI 28.1.0; a healthy `local` network at protocol 28;
 config-dir containing the issuer, buyer, and supplier identities; and a test-only
@@ -21,8 +21,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-EXPECTED_WASM_SIZE = 25_478
-EXPECTED_WASM_SHA = "e27caede18f9b6c6275d7076b9a671c4964a27b815329ebf399ade0e3770e339"
+EXPECTED_WASM_SIZE = 25_484
+EXPECTED_WASM_SHA = "78b5c6dec22ad1cea497223ff411af544dcd1e9fd613b85514f2c5ae03873a7c"
 EXPECTED_STALE_ERROR = "HostError: Error(Contract, #14)"  # PoError::QuantityExceedsRemaining
 LINES = [
     {"line_id": 1, "ordered_quantity": 10, "unit_price": "6"},
@@ -428,7 +428,7 @@ class Proof:
             "wasm_size": size,
             "stellar_cli": "28.1.0",
             "local_network": self.summary["local_network"],
-            "linesettle_deployment_id": self.summary["primary_contract"],
+            "procuresettle_deployment_id": self.summary["primary_contract"],
             "settlement_sac_id": self.args.sac_id,
             "control": {
                 "first_payout": control["r1_expected_and_paid"],
@@ -451,14 +451,14 @@ class Proof:
         }
         self.log.write("\nSEMANTIC_SUMMARY_JSON:\n" + json.dumps(self.summary, indent=2, sort_keys=True) + "\n")
         self.log.flush()
-        print("LINESETTLE_LOCAL_FLAGSHIP_PROOF_SUMMARY")
+        print("PROCURESETTLE_LOCAL_FLAGSHIP_PROOF_SUMMARY")
         print(json.dumps({"verdict": "PASS", "report": str(self.log_path), **final_summary}, indent=2))
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config-dir", type=Path, required=True)
-    parser.add_argument("--wasm", type=Path, default=Path("target/wasm32v1-none/release/linesettle.wasm"))
+    parser.add_argument("--wasm", type=Path, default=Path("target/wasm32v1-none/release/procuresettle.wasm"))
     parser.add_argument("--report-dir", type=Path, default=Path(".codex/reports/stage5"))
     parser.add_argument("--issuer-identity", required=True)
     parser.add_argument("--buyer-identity", required=True)

@@ -1,8 +1,13 @@
-# LineSettle evidence
+# ProcureSettle evidence
+
+> **Project identity:** The repository was renamed to ProcureSettle after the
+> historical evidence below was produced. Pre-rename proof retains the
+> LineSettle name and artifact identity; proof produced after the rename uses
+> ProcureSettle. Historical source SHAs and hashes are preserved as recorded.
 
 ## Product claim
 
-LineSettle settles a fully funded purchase order by calculating supplier
+ProcureSettle settles a fully funded purchase order by calculating supplier
 payouts from buyer-accepted per-line receipt quantities using immutable stored
 unit prices.
 
@@ -108,7 +113,7 @@ Python 3, and Docker. From the repository root:
 ```sh
 cargo +1.95.0 fmt --all -- --check
 cargo +1.95.0 test --workspace --locked
-stellar contract build --locked --package linesettle
+stellar contract build --locked --package procuresettle
 ```
 
 For the full local ledger proof, use the `flagship` job in
@@ -127,7 +132,7 @@ use Testnet or Mainnet for this proof.
   Stage 7 found no legitimate target; Stage 8 is blocked and was not executed.
 - There is no physical-delivery proof: receipt quantities are submitted by the
   supplier and accepted by the buyer.
-- No LineSettle Testnet or Mainnet contract proof has been completed.
+- No ProcureSettle Testnet or Mainnet contract proof has been completed.
 - Cancellation is covered by host tests but has not been demonstrated through
   the CLI local-ledger proof.
 - Broad compatibility with arbitrary custom SEP-41 tokens is not claimed; the

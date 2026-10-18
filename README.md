@@ -22,11 +22,12 @@ buyer.
 
 ## Evidence
 
-The project has 64 host tests and a hosted local-ledger proof of quantity-based
-settlement, closeout, changed-quantity payout, and stale-receipt rejection. See
-the [evidence record](docs/EVIDENCE.md) for historical LineSettle and current
-ProcureSettle source/WASM identities, raw proof logs, limitations, and the
-reproduction path.
+The project has 64 host tests, a hosted local-ledger proof, and a public
+Stellar Testnet flagship proof of quantity-based settlement, closeout,
+changed-quantity payout, and stale-receipt rejection. See the
+[evidence record](docs/EVIDENCE.md) and the durable
+[Testnet evidence bundle](evidence/testnet/) for source/WASM identities, public
+transaction references, proof results, limitations, and reproduction paths.
 
 Run the checks from the repository root:
 
@@ -43,7 +44,8 @@ ProcureSettle is dual licensed under [MIT](LICENSE-MIT) or
 
 ## Limits
 
-- There is no ProcureSettle Testnet or Mainnet contract proof.
+- ProcureSettle has a public Stellar Testnet flagship proof; no Mainnet
+  deployment or proof is claimed.
 - The contract records supplier delivery assertions and buyer quantity
   acceptance; it does not automatically verify physical delivery.
 - There is no dispute arbitration, invoice financing, factoring, or PO

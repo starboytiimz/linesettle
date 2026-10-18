@@ -126,6 +126,13 @@ script independently derives expected receipt values and asserts the actual
 state and token-balance results, including the intended stale failure. Do not
 use Testnet or Mainnet for this proof.
 
+The separate Testnet harness is [`scripts/testnet-flagship-proof.py`](../scripts/testnet-flagship-proof.py).
+It requires Stellar CLI 28.1.0, three funded Testnet identities in a private
+CLI config directory, and real Testnet transaction fees in XLM. Review its
+`--help` and the evidence manifest before running; it creates a classic test
+asset, deploys contracts, and submits transactions on public Testnet. The
+captured Testnet run is evidence, not a recurring CI gate.
+
 ## Scope and limitations
 
 - No independent external-project compatibility proof has been completed.
@@ -137,15 +144,66 @@ use Testnet or Mainnet for this proof.
   claimed yet.
 - There is no physical-delivery proof: receipt quantities are submitted by the
   supplier and accepted by the buyer.
-- No ProcureSettle Testnet or Mainnet contract proof has been completed.
+- A public ProcureSettle Stellar Testnet flagship proof is recorded below. No
+  Mainnet deployment or proof is claimed.
 - Cancellation is covered by host tests but has not been demonstrated through
   the CLI local-ledger proof.
 - Broad compatibility with arbitrary custom SEP-41 tokens is not claimed; the
   real execution used a classic asset wrapped as a SAC.
 - v0.1 uses integer quantities, has no dispute arbitration, and does not
   support PO amendments.
-- No project `LICENSE` has been selected. The source is publicly available,
-  but no formal open-source license is asserted.
+- The project is dual licensed under MIT OR Apache-2.0; see `LICENSE-MIT` and
+  `LICENSE-APACHE`.
+
+## Public Stellar Testnet flagship proof
+
+The following proof used the ProcureSettle artifact built from source
+[`1e114630cda64260235dd9f4b61456b73c56f9f9`](https://github.com/starboytiimz/procuresettle/commit/1e114630cda64260235dd9f4b61456b73c56f9f9),
+tree `c333da06cdf60169f0b03f323da09a6f983ef521`. The deployed contract is
+`CB2N2TJDMINCTXWPGMDZI7LNTMQYHC5ZYTT24YJKIPRQLP5UOAUSICEG`. The Stellar CLI
+deployment flow submitted separate transactions for code upload and contract
+instance creation: WASM code upload/install transaction
+[`5135b907fb2c2d23212b99fb0a29b7e8606ba18f70c636f0b06937480032886e`](https://stellar.expert/explorer/testnet/tx/5135b907fb2c2d23212b99fb0a29b7e8606ba18f70c636f0b06937480032886e),
+then contract instance creation/deployment transaction
+[`cbe56d1f20de2f97c8af9641ccd4dced2e356d9a1b6a347c9829e0a96274e8d6`](https://stellar.expert/explorer/testnet/tx/cbe56d1f20de2f97c8af9641ccd4dced2e356d9a1b6a347c9829e0a96274e8d6),
+which created the contract ID above and invoked `__constructor` against the
+same WASM hash. The artifact was `procuresettle.wasm`, 25,484 bytes, SHA-256
+`78b5c6dec22ad1cea497223ff411af544dcd1e9fd613b85514f2c5ae03873a7c`.
+
+The run used Stellar CLI 28.1.0, Rust/Cargo 1.95.0, `soroban-sdk` 28.0.0,
+and the public Stellar Testnet at protocol 29. Settlement used the classic
+asset `PSET:GADNRQAUDP3AWNV5A5Q26N4667LK3Z3GGYPZLER6VFONODXPZ5OVM25W`, wrapped
+as SAC `CBTMM72FRA3O6UBHGOXQ6PS2M77HHJSKGCWVNHMM7XAEUPCU54WO3SUS`.
+
+For the control PO (A 10 x 6; B 8 x 5; total 100), the independently
+calculated A+6/B+4 receipt settled 56, and the A+4/B+4 receipt settled 44.
+The PO closed with funded value 100, paid value 100, refunded value 0, and no
+remaining control-PO balance in the contract. With the same terms, A+5/B+4
+settled 50. These were actual Testnet token transfers and contract state
+queries, not host-only results.
+
+On a third funded PO, the previously valid stale A+5/B+1 receipt was attempted
+after A+6/B+4 had settled. The CLI exited 1 with `QuantityExceedsRemaining`
+(PoError #14). The stale receipt remained `Submitted`; PO and line state and
+buyer/supplier/contract PSET balances compared equal before and after the
+failed attempt. Final isolated proof balances were buyer 700, supplier 206,
+and contract 94 base units, independently accounting for the three funded
+POs and their successful settlements.
+
+The deployment, setup, and successful lifecycle transaction hashes, plus
+fetched Testnet transaction results/meta/events, are preserved in
+[`evidence/testnet/transactions.json`](../evidence/testnet/transactions.json).
+The captured CLI transcript and manifest/checksums are in the same directory.
+The failed stale attempt was rejected during simulation and therefore has no
+submitted transaction hash; its nonzero CLI output and before/after state are
+preserved in the transcript and manifest.
+
+This is a Testnet result only. Testnet assets have no monetary value and the
+network is periodically reset; the public ledger records may eventually become
+unavailable. The committed fetched transaction data preserves the observed
+results for later inspection. No Mainnet, production-readiness, audit, physical
+delivery, broad arbitrary SEP-41 compatibility, Movix compatibility, adoption,
+or endorsement claim is made.
 
 ## TTL lifecycle repair
 

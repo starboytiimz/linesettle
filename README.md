@@ -25,7 +25,7 @@ buyer.
 The project has 64 host tests, a hosted local-ledger proof, and public Stellar
 Testnet evidence for the flagship lifecycle and a bounded read-only compatibility
 proof against Movix's pinned line-item fixture. See the
-[evidence record](docs/EVIDENCE.md) and the durable
+[evidence record](docs/EVIDENCE.md) and the
 [durable evidence bundles](evidence/) for source/WASM identities, public
 transaction references, proof results, limitations, and reproduction paths.
 

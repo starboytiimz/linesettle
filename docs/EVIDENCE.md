@@ -199,9 +199,10 @@ preserved in the transcript and manifest.
 This is a Testnet result only. Testnet assets have no monetary value and the
 network is periodically reset; the public ledger records may eventually become
 unavailable. The committed fetched transaction data preserves the observed
-results for later inspection. No Mainnet, production-readiness, audit, physical
-delivery, broad arbitrary SEP-41 compatibility, Movix compatibility, adoption,
-or endorsement claim is made.
+results for later inspection. That F3 execution makes no Mainnet,
+production-readiness, audit, physical delivery, broad arbitrary SEP-41
+compatibility, Movix compatibility, adoption, or endorsement claim. The
+separate bounded Movix compatibility proof is recorded below.
 
 ## TTL lifecycle repair
 

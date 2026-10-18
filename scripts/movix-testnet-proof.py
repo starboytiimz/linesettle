@@ -55,6 +55,7 @@ class Proof:
         self.transactions: dict[str, dict[str, str]] = {}
         self.last_hashes: list[str] = []
         self.summary: dict[str, Any] = {"transactions": [], "submitted_operations": []}
+        self.summary["verified_cli_post_submit_errors"] = []
 
     def close(self) -> None:
         self.log.close()
@@ -104,7 +105,29 @@ class Proof:
                     {"command": display, "transaction_hashes": list(self.last_hashes)}
                 )
         if expected_exit >= 0 and proc.returncode != expected_exit:
-            raise RuntimeError(f"{display}: exit {proc.returncode}, expected {expected_exit}; see {self.log_path}")
+            combined = proc.stdout + "\n" + proc.stderr
+            post_submit_success = (
+                proc.returncode != 0
+                and "Read-only file system" in combined
+                and bool(self.last_hashes)
+                and all('"tx_success"' in self.transactions[tx_hash].get("result", "")
+                        for tx_hash in self.last_hashes)
+            )
+            if post_submit_success:
+                self.summary["verified_cli_post_submit_errors"].append({
+                    "command": display,
+                    "process_exit": proc.returncode,
+                    "filesystem_error": "Read-only file system",
+                    "ledger_results": {tx_hash: "tx_success" for tx_hash in self.last_hashes},
+                    "action": "continued only after independent tx fetch confirmed success; no transaction was retried",
+                })
+                self.log.write(
+                    "NOTE: CLI exited nonzero after submission because its local filesystem write failed. "
+                    "Fetched transaction result confirms tx_success; no transaction was retried.\n"
+                )
+                self.log.flush()
+            else:
+                raise RuntimeError(f"{display}: exit {proc.returncode}, expected {expected_exit}; see {self.log_path}")
         return proc.returncode, proc.stdout, proc.stderr
 
     def fetch_transaction(self, tx_hash: str) -> None:

@@ -25,7 +25,9 @@ SAC contract: CBTMM72FRA3O6UBHGOXQ6PS2M77HHJSKGCWVNHMM7XAEUPCU54WO3SUS
 ProcureSettle contract: CB2N2TJDMINCTXWPGMDZI7LNTMQYHC5ZYTT24YJKIPRQLP5UOAUSICEG
 WASM: procuresettle.wasm; 25,484 bytes
 WASM SHA-256: 78b5c6dec22ad1cea497223ff411af544dcd1e9fd613b85514f2c5ae03873a7c
-Deployment transaction: 5135b907fb2c2d23212b99fb0a29b7e8606ba18f70c636f0b06937480032886e
+WASM code upload/install transaction: 5135b907fb2c2d23212b99fb0a29b7e8606ba18f70c636f0b06937480032886e
+Contract instance creation/deployment transaction: cbe56d1f20de2f97c8af9641ccd4dced2e356d9a1b6a347c9829e0a96274e8d6
+The CLI deployment flow submitted separate public transactions for code installation and contract-instance creation. The second transaction creates the ProcureSettle contract ID listed above, invokes __constructor, references the same underlying WASM hash, and has tx_success.
 
 Semantic results (asset units are PSET base units):
 Control PO 17922697198860: funded 100; A+6/B+4 independently values and settles 56; A+4/B+4 independently values and settles 44; Closed; paid 100; refunded 0; control contract balance 0.
@@ -43,7 +45,9 @@ Changed PO transactions:
 create 59d1630cbb24b2aa0c76d71a2bf53e70c81ba07fd91e7a3489049b36f5533046; accept 9a81700755ceb2b17a6ee42f168f8b2a7efd70f63349e0c8abebf9241a8349b6; fund f2b847580a402dfb924ba2a88474e4a4e6c489a6c1d81f018621aa695cb13365; submit 44f128f9d5a6f0022f9aedc4850cfccf9f411801ccac9c5a8ca14ca8b6d96b40; settle 3e28fcc1a65264fa8fb8b5df19b892cebf7104925465745392df9d0e75b74a7d.
 Stale PO transactions:
 create 82f43f644a473b98b4a16cd1f4a2fab13f5e66464dc9bf0616214b1f14e99fef; accept 7d62cda55904584cd5c8d5f6dad39f919edb840640e2685294d17f2566166a56; fund aee7fa67bda36661b8477b88f68dfdf1ff70c8db5c336431d4b6106be76f325c; submit settle-first receipt 22dbf348263e6ad62a5cd8761e1da894029dfb97f6134f79e773d6e3c5f641c3; submit stale receipt af0b54fe3cc292066e9d0638c2a97766c51057b1fe0354802892cda531fcc342; settle first receipt ba4a4112e95068866595d3df8b3354b65133db9a31cc9209e7ea6d72c8c13435.
-All captured transaction results, metadata, and events are preserved in transactions.json. The stale failed simulation has no transaction hash because it was not submitted.
+27 unique submitted transaction hashes are preserved in transactions.json; each has result, metadata, and events, and each result is tx_success. The stale failed simulation has no transaction hash because it was not submitted.
+
+The resumed harness summary historically labeled 5135b907fb2c2d23212b99fb0a29b7e8606ba18f70c636f0b06937480032886e as deployment_transaction_hash. Inspection of the preserved fetched transactions establishes the precise classification above: that hash uploads/installs WASM code, while cbe56d1f20de2f97c8af9641ccd4dced2e356d9a1b6a347c9829e0a96274e8d6 creates the ProcureSettle contract instance.
 
 The transcript includes actual CLI stdout/stderr for the resumed successful run. Earlier CLI response/filesystem interruptions were checked against Testnet state before resuming; they were not treated as successful business operations unless ledger state confirmed submission.
 

@@ -160,9 +160,14 @@ captured Testnet run is evidence, not a recurring CI gate.
 The following proof used the ProcureSettle artifact built from source
 [`1e114630cda64260235dd9f4b61456b73c56f9f9`](https://github.com/starboytiimz/procuresettle/commit/1e114630cda64260235dd9f4b61456b73c56f9f9),
 tree `c333da06cdf60169f0b03f323da09a6f983ef521`. The deployed contract is
-`CB2N2TJDMINCTXWPGMDZI7LNTMQYHC5ZYTT24YJKIPRQLP5UOAUSICEG`; its deployment
-transaction is [`5135b907fb2c2d23212b99fb0a29b7e8606ba18f70c636f0b06937480032886e`](https://stellar.expert/explorer/testnet/tx/5135b907fb2c2d23212b99fb0a29b7e8606ba18f70c636f0b06937480032886e).
-The artifact was `procuresettle.wasm`, 25,484 bytes, SHA-256
+`CB2N2TJDMINCTXWPGMDZI7LNTMQYHC5ZYTT24YJKIPRQLP5UOAUSICEG`. The Stellar CLI
+deployment flow submitted separate transactions for code upload and contract
+instance creation: WASM code upload/install transaction
+[`5135b907fb2c2d23212b99fb0a29b7e8606ba18f70c636f0b06937480032886e`](https://stellar.expert/explorer/testnet/tx/5135b907fb2c2d23212b99fb0a29b7e8606ba18f70c636f0b06937480032886e),
+then contract instance creation/deployment transaction
+[`cbe56d1f20de2f97c8af9641ccd4dced2e356d9a1b6a347c9829e0a96274e8d6`](https://stellar.expert/explorer/testnet/tx/cbe56d1f20de2f97c8af9641ccd4dced2e356d9a1b6a347c9829e0a96274e8d6),
+which created the contract ID above and invoked `__constructor` against the
+same WASM hash. The artifact was `procuresettle.wasm`, 25,484 bytes, SHA-256
 `78b5c6dec22ad1cea497223ff411af544dcd1e9fd613b85514f2c5ae03873a7c`.
 
 The run used Stellar CLI 28.1.0, Rust/Cargo 1.95.0, `soroban-sdk` 28.0.0,

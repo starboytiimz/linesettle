@@ -53,9 +53,14 @@ class Proof:
         self.log = self.log_path.open("w", encoding="utf-8")
         self.cli = ["stellar", "--config-dir", str(self.config)]
         self.transactions: dict[str, dict[str, str]] = {}
+        if args.prior_transactions:
+            self.transactions = json.loads(args.prior_transactions.read_text(encoding="utf-8"))
         self.last_hashes: list[str] = []
-        self.summary: dict[str, Any] = {"transactions": [], "submitted_operations": []}
-        self.summary["verified_cli_post_submit_errors"] = []
+        self.summary: dict[str, Any] = {
+            "transactions": sorted(self.transactions),
+            "submitted_operations": [],
+            "verified_cli_post_submit_errors": [],
+        }
 
     def close(self) -> None:
         self.log.close()
@@ -106,9 +111,11 @@ class Proof:
                 )
         if expected_exit >= 0 and proc.returncode != expected_exit:
             combined = proc.stdout + "\n" + proc.stderr
+            confirmed_errors = ("Read-only file system", "Request timeout")
+            observed_post_submit_error = next((error for error in confirmed_errors if error in combined), None)
             post_submit_success = (
                 proc.returncode != 0
-                and "Read-only file system" in combined
+                and observed_post_submit_error is not None
                 and bool(self.last_hashes)
                 and all('"tx_success"' in self.transactions[tx_hash].get("result", "")
                         for tx_hash in self.last_hashes)
@@ -117,7 +124,7 @@ class Proof:
                 self.summary["verified_cli_post_submit_errors"].append({
                     "command": display,
                     "process_exit": proc.returncode,
-                    "filesystem_error": "Read-only file system",
+                    "post_submit_error": observed_post_submit_error,
                     "ledger_results": {tx_hash: "tx_success" for tx_hash in self.last_hashes},
                     "action": "continued only after independent tx fetch confirmed success; no transaction was retried",
                 })
@@ -133,13 +140,21 @@ class Proof:
     def fetch_transaction(self, tx_hash: str) -> None:
         fetched: dict[str, str] = {}
         for kind in ("result", "meta", "events"):
-            proc = subprocess.run(
-                self.cli + ["tx", "fetch", kind, "--hash", tx_hash, "--network", "testnet"],
-                text=True,
-                capture_output=True,
-                check=False,
-                timeout=180,
-            )
+            proc = None
+            for attempt in range(4):
+                proc = subprocess.run(
+                    self.cli + ["tx", "fetch", kind, "--hash", tx_hash, "--network", "testnet"],
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                    timeout=180,
+                )
+                if proc.returncode == 0 or attempt == 3:
+                    break
+                self.log.write(f"Fetch retry {attempt + 1}/3 for {kind} of {tx_hash}: read-only query failed.\n")
+                self.log.flush()
+                time.sleep(2)
+            assert proc is not None
             joined = proc.stdout + (("\nSTDERR:\n" + proc.stderr) if proc.stderr else "")
             self.log.write(f"\n$ stellar tx fetch {kind} --hash {tx_hash} --network testnet\nEXIT={proc.returncode}\n{joined}\n")
             self.log.flush()
@@ -214,9 +229,13 @@ class Proof:
         }
         identity_dir = self.config / "identity"
         for role, name in identities.items():
-            if (identity_dir / f"{name}.toml").exists():
+            exists = (identity_dir / f"{name}.toml").exists()
+            if exists and not self.args.reuse_identities:
                 raise RuntimeError(f"identity already exists in isolated config; refusing reuse: {name}")
-            self.run(["keys", "generate", name, "--network", "testnet", "--fund"], secret_output=True)
+            if not exists and self.args.reuse_identities:
+                raise RuntimeError(f"cannot resume; expected identity is missing: {name}")
+            if not exists:
+                self.run(["keys", "generate", name, "--network", "testnet", "--fund"], secret_output=True)
         addresses = {role: self.address(name) for role, name in identities.items()}
         self.summary["account_funding"] = [self.horizon_account_creation(address) for address in addresses.values()]
         self.summary["identities"] = addresses
@@ -273,6 +292,14 @@ class Proof:
         contract = ids[-1]
         self.summary["contract_id"] = contract
         self.summary["deploy_transaction_hashes"] = list(self.last_hashes)
+        self.verify_deployed_hash(contract)
+        _, interface_out, interface_err = self.run([
+            "contract", "info", "interface", "--id", contract, "--network", "testnet",
+        ], read_only=True)
+        self.summary["deployed_interface"] = (interface_out or interface_err).strip()
+        return contract
+
+    def verify_deployed_hash(self, contract: str) -> None:
         _, hash_out, hash_err = self.run([
             "contract", "info", "hash", "--id", contract, "--network", "testnet",
         ], read_only=True)
@@ -280,11 +307,6 @@ class Proof:
         if EXPECTED_WASM_SHA not in deployed_hash:
             raise RuntimeError(f"on-network contract WASM hash mismatch: {deployed_hash}")
         self.summary["deployed_wasm_hash_output"] = deployed_hash
-        _, interface_out, interface_err = self.run([
-            "contract", "info", "interface", "--id", contract, "--network", "testnet",
-        ], read_only=True)
-        self.summary["deployed_interface"] = (interface_out or interface_err).strip()
-        return contract
 
     def create_po(self, contract: str, po_id: int, sac: str, buyer: str, supplier: str) -> None:
         self.invoke(contract, self.args.buyer_identity, "create_po",
@@ -397,8 +419,31 @@ class Proof:
         })
 
         addresses = self.create_identities()
-        sac = self.setup_asset(addresses)
-        contract = self.deploy()
+        if self.args.resume_sac_id:
+            sac = self.args.resume_sac_id
+            initial = {role: self.balance(addresses[role], sac) for role in ("buyer", "supplier")}
+            initial["contract"] = self.balance(sac, sac)
+            if initial != {"buyer": 467_500_000, "supplier": 0, "contract": 0}:
+                raise RuntimeError(f"resume asset balances differ from expected initial state: {initial}")
+            self.summary["asset"] = f"MVXP:{addresses['issuer']}"
+            self.summary["sac_id"] = sac
+            self.summary["initial_asset_balances"] = initial
+        else:
+            sac = self.setup_asset(addresses)
+        if self.args.resume_contract_id:
+            contract = self.args.resume_contract_id
+            self.summary["contract_id"] = contract
+            self.summary["deploy_transaction_hashes"] = self.args.deployment_hash or []
+            self.verify_deployed_hash(contract)
+            _, interface_out, interface_err = self.run([
+                "contract", "info", "interface", "--id", contract, "--network", "testnet",
+            ], read_only=True)
+            self.summary["deployed_interface"] = (interface_out or interface_err).strip()
+        else:
+            contract = self.deploy()
+        for tx_hash in self.args.fetch_hash:
+            if tx_hash not in self.transactions:
+                self.fetch_transaction(tx_hash)
         po_id = time.time_ns() // 1_000_000 * 10
         self.summary["po_id"] = po_id
         self.create_po(contract, po_id, sac, addresses["buyer"], addresses["supplier"])
@@ -528,6 +573,12 @@ def main() -> int:
     parser.add_argument("--issuer-identity", default="procuresettle_f4_issuer")
     parser.add_argument("--buyer-identity", default="procuresettle_f4_buyer")
     parser.add_argument("--supplier-identity", default="procuresettle_f4_supplier")
+    parser.add_argument("--reuse-identities", action="store_true", help="Resume only when all named identities already exist in the private config")
+    parser.add_argument("--resume-sac-id", help="Use a SAC already established and independently balance-checked in this F4 config")
+    parser.add_argument("--resume-contract-id", help="Continue with an already deployed F4 ProcureSettle instance")
+    parser.add_argument("--deployment-hash", action="append", default=[], help="Previously submitted deployment transaction hash; may be repeated")
+    parser.add_argument("--fetch-hash", action="append", default=[], help="Fetch prior submitted transaction result/meta/events before continuing")
+    parser.add_argument("--prior-transactions", type=Path, help="Existing private transaction fetch map to extend")
     args = parser.parse_args()
     proof = Proof(args)
     try:

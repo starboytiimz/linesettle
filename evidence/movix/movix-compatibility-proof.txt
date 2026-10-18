@@ -1,0 +1,62 @@
+PROCURESETTLE / MOVIX TESTNET COMPATIBILITY PROOF
+
+Testnet execution date: 2026-10-18 UTC.
+Final read-only audit record: 2026-10-18T17:38:42.643769+00:00
+ProcureSettle contract source used for the artifact: 8153c07af135768823561dc548f15e1f70db2b57
+ProcureSettle contract source tree: fe9cf64605aa6b938c58805ad26417f8fd455318
+Proof harness checkout at final read-only audit: f56fdcc4164559e75d774828ef27d96a3affc9dc (the tracked script was subsequently corrected for transaction-hash bookkeeping)
+WASM: procuresettle.wasm / 25484 bytes / SHA-256 78b5c6dec22ad1cea497223ff411af544dcd1e9fd613b85514f2c5ae03873a7c
+Movix source: https://github.com/chrissstellee/Movix at 05f2ba1dbe72a8f46e546b4509281e54933708e4 (tree 3b6544f482b86e9a5f7810cc6b5ce9e31d5aae58)
+Testnet protocol: 29
+Network ID: cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472
+
+MOVIX FIXTURE AND INDEPENDENT MAPPING
+MOVIX-PO-0001 line 1: quantity 2 * unitPriceBaseUnits 125000000 = 250000000
+MOVIX-PO-0001 line 2: quantity 3 * unitPriceBaseUnits 72500000 = 217500000
+Independent total: 250000000 + 217500000 = 467500000
+ProcureSettle stored the same integer quantities and unit prices. No decimal or currency conversion was applied.
+
+TESTNET IDENTITIES AND ASSET
+Issuer: GA2FXP4SEUGDX5FCEKYTA6VOJAOVKPT7YQWAM6V3C2XJTBBZZ2FLZ3BP
+Buyer: GAT6HPNEZTO42LMCCS2VISFJXY2QJPIA6Q2ASB5TG6ROP2NIA66LRXBD
+Supplier: GC7CUJ6STI4MHXIBMCVFRRDKMLN4BGGJXQZL6WABPNGA7XAJWCDXTQPY
+Asset: MVXP:GA2FXP4SEUGDX5FCEKYTA6VOJAOVKPT7YQWAM6V3C2XJTBBZZ2FLZ3BP
+SAC: CBMB7BPC7WINV55FMRC7BEOZBYSZFBLZEMMXBJH4VTMS4IZBUZVOJPHG
+ProcureSettle contract: CDGZXUY4VRWKJ6GQMOPPWL6J3DR3ITXSHJICRCWG3VPG44YR7VIJ6JYK
+PO ID: 17923441710900
+Initial asset balances: buyer 467500000, supplier 0, ProcureSettle contract 0.
+
+TRANSACTION REFERENCES
+SAC setup/deployment transaction: 995d37d846584d56c7ac22a409b9813d85c23ced191083ad3c9b1a0b3b60147f
+Classic asset issuance: recorded in transactions.json
+WASM code was already installed on Testnet under the exact artifact hash; this fresh-instance deployment reused it.
+Contract instance creation: 1ecd6a7645fcf7f810cd7de8443e148c7228b16dda2260dd62f4721c5c5ce9ac
+Create PO: 405cc70789ff306f7fc5c43c99bad355b6ac94932b6c5a8c76d53daa035a8ea4
+Accept PO: f75a8bdaa6afc7eec9b3e2c045549c83dd2ef4091953ae82329bcaa646218362
+Fund PO (467500000): c7a236b130cbc961b32362ad080e37bc7e00470cae77125bf02c24ee7077bfaf
+Submit receipt 1: 763d8e6b6fb0d2120d41e2f468ad712ed726ae7367e7f712820690e0bea9ef02
+Submit stale receipt 2: 895be844be2ae76a0515da0c9def19c890d07f9c3f7b25a1449528c6e36c0539
+Settle receipt 1 (197500000): 9198c5c3473d4bc811ee013008123ee02bf7bdf6e180af46549d63b3cd22d73c
+Submit receipt 3: 095cf6ac3f2dff2e3fada7153d738cd1b12697df3d80ea3ed903ddd419d9edd5
+Settle receipt 3 (270000000): 570ca04e0418e47daeba6084e6e9e852d1542cc0ba7c6c4e81980d70fe12d039
+
+ECONOMIC RESULTS
+Receipt 1 quantities: line 1 +1 / line 2 +1. Independent value 1*125000000 + 1*72500000 = 197500000; actual SAC transfer 197500000.
+After receipt 1: accepted line quantities 1/2 and 1/3; paid 197500000; buyer 0, supplier 197500000, contract 270000000.
+Stale receipt 2 quantities: line 1 +2 / line 2 +1; it fit original quantities and independent value was 322500000. After receipt 1 only 1 remained on line 1. The accept-and-settle CLI command exited 1 with HostError / PoError #14 QuantityExceedsRemaining during simulation; no transaction was submitted.
+Stale before snapshot: {"balances": {"buyer": 0, "contract": 270000000, "supplier": 197500000}, "lines": {"1": {"accepted_quantity": 1, "line_id": 1, "ordered_quantity": 2, "unit_price": "125000000"}, "2": {"accepted_quantity": 1, "line_id": 2, "ordered_quantity": 3, "unit_price": "72500000"}}, "po": {"buyer": "GAT6HPNEZTO42LMCCS2VISFJXY2QJPIA6Q2ASB5TG6ROP2NIA66LRXBD", "funded_value": "467500000", "line_count": 2, "line_ids": [1, 2], "paid_value": "197500000", "po_id": 17923441710900, "refunded_value": "0", "status": "Funded", "supplier": "GC7CUJ6STI4MHXIBMCVFRRDKMLN4BGGJXQZL6WABPNGA7XAJWCDXTQPY", "token": "CBMB7BPC7WINV55FMRC7BEOZBYSZFBLZEMMXBJH4VTMS4IZBUZVOJPHG", "total_value": "467500000"}, "receipt": {"line_count": 2, "line_ids": [1, 2], "po_id": 17923441710900, "receipt_id": 2, "status": "Submitted"}}
+Stale after snapshot:  {"balances": {"buyer": 0, "contract": 270000000, "supplier": 197500000}, "lines": {"1": {"accepted_quantity": 1, "line_id": 1, "ordered_quantity": 2, "unit_price": "125000000"}, "2": {"accepted_quantity": 1, "line_id": 2, "ordered_quantity": 3, "unit_price": "72500000"}}, "po": {"buyer": "GAT6HPNEZTO42LMCCS2VISFJXY2QJPIA6Q2ASB5TG6ROP2NIA66LRXBD", "funded_value": "467500000", "line_count": 2, "line_ids": [1, 2], "paid_value": "197500000", "po_id": 17923441710900, "refunded_value": "0", "status": "Funded", "supplier": "GC7CUJ6STI4MHXIBMCVFRRDKMLN4BGGJXQZL6WABPNGA7XAJWCDXTQPY", "token": "CBMB7BPC7WINV55FMRC7BEOZBYSZFBLZEMMXBJH4VTMS4IZBUZVOJPHG", "total_value": "467500000"}, "receipt": {"line_count": 2, "line_ids": [1, 2], "po_id": 17923441710900, "receipt_id": 2, "status": "Submitted"}}
+Snapshot equality: true
+Receipt 3 quantities: line 1 +1 / line 2 +2. Independent value 1*125000000 + 2*72500000 = 270000000; actual SAC transfer 270000000.
+Final PO: status Closed; funded 467500000; paid 467500000; refunded 0.
+Final accepted quantities: line 1 2/2; line 2 3/3.
+Final asset balances: buyer 0; supplier 467500000; contract 0.
+
+TRANSACTION VERIFICATION
+16 unique public transaction hashes are preserved in transactions.json. Each includes fetched result, meta, and events; all submitted transactions have tx_success. The two settlement transaction event records independently show SAC transfer amounts 197500000 and 270000000 to the supplier. The stale failure has no transaction hash because simulation rejected it before submission.
+
+EXECUTION NOTE
+The Testnet harness needed a resumable continuation after CLI/orchestration interruptions. Submitted transactions were not retried. The final settlement transaction was fetched and confirmed successful; a subsequent read-only audit checked the current contract state, balances, both transfer events, and the preserved stale pre/post snapshots. The harness now preserves the settlement hash before performing balance reads.
+
+LIMITATION
+This is read-only source-model compatibility evidence, not a Movix integration. Movix does not use, endorse, adopt, or maintain ProcureSettle. It does not implement Movix's current amendment/exception policy. Testnet assets have no monetary value and the network is periodically reset.

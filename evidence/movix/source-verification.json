@@ -1,0 +1,39 @@
+{
+  "agr_03_amendment_or_exception_refund_boundary_verified": true,
+  "commit": "05f2ba1dbe72a8f46e546b4509281e54933708e4",
+  "deferred_partial_delivery_and_release_scope_verified": true,
+  "domain_test_independently_recomputes_total": true,
+  "fixture_blob": "97177a96ed7da93f5163aef90354a070e432edaa",
+  "fixture_total_base_units": 467500000,
+  "independently_recomputed_total_base_units": 467500000,
+  "lines": [
+    {
+      "line_number": 1,
+      "line_value_base_units": 250000000,
+      "quantity": 2,
+      "unit_price_base_units": 125000000
+    },
+    {
+      "line_number": 2,
+      "line_value_base_units": 217500000,
+      "quantity": 3,
+      "unit_price_base_units": 72500000
+    }
+  ],
+  "purchase_order_number": "MOVIX-PO-0001",
+  "repository": "https://github.com/chrissstellee/Movix",
+  "tree": "3b6544f482b86e9a5f7810cc6b5ce9e31d5aae58",
+  "verdict": "PASS",
+  "verified_blob_ids": {
+    "apps/web/features/orders/escrow-fulfillment-panel.tsx": "54be7049bb2dea660c97e745f08f64ced95fdbe2",
+    "contracts/escrow/src/lib.rs": "a2890723a1983ad8ea9196880def33ced4b626b1",
+    "docs/Movix-ASEAN-Agricultural-Trade-Pivot.md": "3fe9a4a4202d00614c1d2a3e83c08ecfd26e1b57",
+    "docs/Movix-Sprint-08-Fulfillment-Release-Detailed.md": "a7612fd4133430a0362597874b150ce8809cd2c5",
+    "docs/Movix-Sprint-Plan.md": "e70877877392c6d052322eca1d6e1fdb4e1167a7",
+    "docs/contracts/escrow-v1/abi.md": "386d9b2a1ff48509b31ae2a18054df37026c2c20",
+    "packages/domain/src/domain.test.ts": "ec680c2d2253e0501855acdd085619aa681fb9ec",
+    "packages/domain/src/fixtures.ts": "97177a96ed7da93f5163aef90354a070e432edaa",
+    "packages/domain/src/orders.ts": "76be7f589386bfe3a65ea43ed646692ecfe3c0d4"
+  },
+  "whole_order_release_after_delivery_confirmation_verified": true
+}

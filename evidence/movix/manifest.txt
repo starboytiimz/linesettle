@@ -1,0 +1,69 @@
+ProcureSettle F4 Movix compatibility proof manifest
+
+Testnet execution date: 2026-10-18 UTC
+Final read-only reconciliation record: 2026-10-18T17:38:42.643769+00:00
+Canonical ProcureSettle repository: https://github.com/starboytiimz/procuresettle
+ProcureSettle source revision used to build artifact: 8153c07af135768823561dc548f15e1f70db2b57
+ProcureSettle source tree: fe9cf64605aa6b938c58805ad26417f8fd455318
+Proof harness at final audit: scripts/movix-testnet-proof.py; SHA-256 187b4c0467a2603c609f9a26ea5b7898943b449b439352895f396b95d74c5f50
+Rust: rustc 1.95.0 (59807616e 2026-04-14)
+Cargo: cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+soroban-sdk: 28.0.0
+Stellar CLI: stellar 28.1.0 (c0f4d0da891bbf214c08b8c5035ae6db80e9a3bd)
+stellar-xdr 28.0.0 (d0f1330e43c3a2c0c616da30698b24140d4eea72)
+xdr (9c9c145953e80990d6ff1ae3a6a973a0ce6d0694)
+WASM: procuresettle.wasm; size 25484 bytes; SHA-256 78b5c6dec22ad1cea497223ff411af544dcd1e9fd613b85514f2c5ae03873a7c
+
+Stellar Testnet protocol: 29
+Network ID: cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472
+Network passphrase: Test SDF Network ; September 2015
+RPC endpoint hostname: soroban-testnet.stellar.org
+RPC URL: https://soroban-testnet.stellar.org
+
+Movix repository: https://github.com/chrissstellee/Movix
+Movix pinned commit: 05f2ba1dbe72a8f46e546b4509281e54933708e4
+Movix tree: 3b6544f482b86e9a5f7810cc6b5ce9e31d5aae58
+Fixture: packages/domain/src/fixtures.ts; blob 97177a96ed7da93f5163aef90354a070e432edaa
+Other inspected file paths and blob IDs: source-verification.json
+Fixture ID: MOVIX-PO-0001
+Extracted line values: 2 * 125000000 = 250000000; 3 * 72500000 = 217500000; total = 467500000
+Movix source test independently uses quantity * unitPriceBaseUnits; the optional Movix package test was NOT EXECUTED (not required for read-only source-model proof).
+
+Public F4 issuer: GA2FXP4SEUGDX5FCEKYTA6VOJAOVKPT7YQWAM6V3C2XJTBBZZ2FLZ3BP
+Public F4 buyer: GAT6HPNEZTO42LMCCS2VISFJXY2QJPIA6Q2ASB5TG6ROP2NIA66LRXBD
+Public F4 supplier: GC7CUJ6STI4MHXIBMCVFRRDKMLN4BGGJXQZL6WABPNGA7XAJWCDXTQPY
+Classic test asset: MVXP:GA2FXP4SEUGDX5FCEKYTA6VOJAOVKPT7YQWAM6V3C2XJTBBZZ2FLZ3BP
+SAC contract ID: CBMB7BPC7WINV55FMRC7BEOZBYSZFBLZEMMXBJH4VTMS4IZBUZVOJPHG
+Fresh ProcureSettle contract ID: CDGZXUY4VRWKJ6GQMOPPWL6J3DR3ITXSHJICRCWG3VPG44YR7VIJ6JYK
+PO ID: 17923441710900
+Initial balances (raw smallest units): buyer 467500000; supplier 0; ProcureSettle contract 0.
+
+Deployment: contract-instance creation transaction 1ecd6a7645fcf7f810cd7de8443e148c7228b16dda2260dd62f4721c5c5ce9ac; the exact WASM hash was already installed on Testnet, so this deployment did not require a separate code-upload transaction. On-network contract hash query and transaction metadata matched the local WASM SHA-256.
+Account funding tx hashes (issuer / buyer / supplier):
+6f4434aacb427c96b84d777259506f03fd7a053be9726d0be353bce98410e037 /
+3a0ebb6686eeb4432f9ca9ba5d86ee3891e71c116242f2d6b97ca8374b163556 /
+793de56d08f1ecbdc6303865d5979e125b9dfba8a85629d756d35d046c3720ae
+Buyer / supplier trustline tx hashes:
+0c3baeba188cc0ad24d228da376e905dd570ac8c54be86427ff8f5bee123d3d2 /
+5145b543504dd9983c16a1b888ed4dcab15c39e157e01a47b73d667e603d5362
+SAC creation tx hash: 995d37d846584d56c7ac22a409b9813d85c23ced191083ad3c9b1a0b3b60147f
+Classic asset issue tx hash: 7144ef0f1611b27b3425d7d5b2980682fd992118b57cc1fd7ba1d74d85513a95
+Contract instance creation tx hash: 1ecd6a7645fcf7f810cd7de8443e148c7228b16dda2260dd62f4721c5c5ce9ac
+Create PO / accept / fund tx hashes:
+405cc70789ff306f7fc5c43c99bad355b6ac94932b6c5a8c76d53daa035a8ea4 /
+f75a8bdaa6afc7eec9b3e2c045549c83dd2ef4091953ae82329bcaa646218362 /
+c7a236b130cbc961b32362ad080e37bc7e00470cae77125bf02c24ee7077bfaf
+Submit receipts 1 / 2 / 3 tx hashes:
+763d8e6b6fb0d2120d41e2f468ad712ed726ae7367e7f712820690e0bea9ef02 /
+895be844be2ae76a0515da0c9def19c890d07f9c3f7b25a1449528c6e36c0539 /
+095cf6ac3f2dff2e3fada7153d738cd1b12697df3d80ea3ed903ddd419d9edd5
+Settle receipt 1 / 3 tx hashes:
+9198c5c3473d4bc811ee013008123ee02bf7bdf6e180af46549d63b3cd22d73c /
+570ca04e0418e47daeba6084e6e9e852d1542cc0ba7c6c4e81980d70fe12d039
+All 16 unique hashes are in transactions.json; each preserves result, meta, and events and reports tx_success. The stale simulation rejection has no transaction hash.
+
+Semantics: receipt 1 = 197500000; stale receipt 2 = PoError #14 / QuantityExceedsRemaining, CLI exit 1, no submission, pre/post equal true; receipt 3 = 270000000; status Closed; funded/paid/refunded = 467500000/467500000/0; final buyer/supplier/contract balances = 0/467500000/0.
+
+The proof is read-only compatibility against the pinned line-item model, not an integration or Movix policy implementation. Movix does not use, endorse, adopt, or maintain ProcureSettle. Testnet assets have no monetary value; Testnet is periodically reset.
+
+Checksum meaning: SHA-256 values identify the preserved bytes. A checksum alone does not establish that the experiment was correct.

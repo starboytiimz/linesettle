@@ -88,10 +88,15 @@ class Proof:
                 )
             self.log.flush()
             combined = proc.stdout + "\n" + proc.stderr
+            transient_read_errors = (
+                "could not query captive core",
+                "client error (Connect)",
+                "Request timeout",
+            )
             if not (
                 read_only
                 and proc.returncode != 0
-                and "could not query captive core" in combined
+                and any(error in combined for error in transient_read_errors)
                 and attempt + 1 < attempts
             ):
                 break
@@ -271,8 +276,8 @@ class Proof:
         if decimals != "7":
             raise RuntimeError(f"unexpected MVXP SAC decimals: {decimals!r}")
         initial = {role: self.balance(addresses[role], sac) for role in ("buyer", "supplier")}
-        initial["contract"] = self.balance(sac, sac)
-        if initial != {"buyer": 467_500_000, "supplier": 0, "contract": 0}:
+        initial["sac_contract"] = self.balance(sac, sac)
+        if initial != {"buyer": 467_500_000, "supplier": 0, "sac_contract": 0}:
             raise RuntimeError(f"unexpected initial smallest-unit balances: {initial}")
         self.summary["initial_asset_balances"] = initial
         return sac
@@ -356,6 +361,7 @@ class Proof:
         contract_before = self.balance(contract, sac)
         _, out, err = self.invoke(contract, self.args.buyer_identity, "accept_receipt_and_settle",
                                   "--po_id", str(po_id), "--receipt_id", str(receipt_id))
+        tx_hashes = list(self.last_hashes)
         try:
             result = json.loads(out.strip().splitlines()[-1])
         except (json.JSONDecodeError, IndexError) as exc:
@@ -369,7 +375,6 @@ class Proof:
             raise RuntimeError(f"settlement returned {result}, independently expected {expected}")
         if after["buyer"] != buyer_before or after["supplier"] - supplier_before != expected or contract_before - after["contract"] != expected:
             raise RuntimeError(f"settlement token balance deltas mismatch: {after}")
-        tx_hashes = list(self.last_hashes)
         if not tx_hashes:
             raise RuntimeError("settlement produced no captured submitted transaction hash")
         for tx_hash in tx_hashes:
@@ -380,6 +385,160 @@ class Proof:
         return {"return_value": int(result), "expected": expected, "transaction_hashes": tx_hashes,
                 "balances_before": {"buyer": buyer_before, "supplier": supplier_before, "contract": contract_before},
                 "balances_after": after}
+
+    def audit_completed_proof(self, contract: str, po_id: int, sac: str,
+                              buyer: str, supplier: str, info: dict[str, Any],
+                              extraction: dict[str, Any], wasm_sha: str, wasm_size: int) -> dict[str, Any]:
+        """Independently reconcile the completed Testnet PO and preserved stale-attempt transcript."""
+        po = self.query(contract, "get_po", "--po_id", str(po_id))
+        lines = {str(i): self.query(contract, "get_line", "--po_id", str(po_id), "--line_id", str(i)) for i in (1, 2)}
+        receipts = {str(i): self.query(contract, "get_receipt", "--po_id", str(po_id), "--receipt_id", str(i)) for i in (1, 2, 3)}
+        balances = {role: self.balance(address, sac) for role, address in
+                    (("buyer", buyer), ("supplier", supplier), ("contract", contract))}
+        if (po["status"] != "Closed" or int(po["funded_value"]) != 467_500_000
+                or int(po["paid_value"]) != 467_500_000 or int(po["refunded_value"]) != 0
+                or [int(lines[str(i)]["accepted_quantity"]) for i in (1, 2)] != [2, 3]
+                or [receipts[str(i)]["status"] for i in (1, 2, 3)] != ["Settled", "Submitted", "Settled"]
+                or balances != {"buyer": 0, "supplier": 467_500_000, "contract": 0}):
+            raise RuntimeError(f"completed on-chain state mismatch: po={po}, lines={lines}, receipts={receipts}, balances={balances}")
+
+        r1_value, r1_raw = self.receipt_value_from_raw(contract, po_id, 1)
+        stale_value, stale_raw = self.receipt_value_from_raw(contract, po_id, 2)
+        r3_value, r3_raw = self.receipt_value_from_raw(contract, po_id, 3)
+        if (r1_value, stale_value, r3_value) != (197_500_000, 322_500_000, 270_000_000):
+            raise RuntimeError(f"raw stored terms did not independently reproduce receipt values: {r1_value}, {stale_value}, {r3_value}")
+
+        stale_before, stale_after, stale_rc, stale_error = self.read_stale_transcript(
+            po_id, contract, sac, buyer, supplier
+        )
+        stale_equal = stale_before == stale_after
+        if not stale_equal:
+            raise RuntimeError(f"preserved stale pre/post economic snapshots differ: {stale_before} != {stale_after}")
+
+        settlement_hashes = {}
+        for amount in (197_500_000, 270_000_000):
+            matches = []
+            for tx_hash, fetched in self.transactions.items():
+                events = fetched.get("events", "")
+                if ('"symbol":"transfer"' in events and contract in events and supplier in events
+                        and f'"i128":"{amount}"' in events):
+                    matches.append(tx_hash)
+            if len(matches) != 1:
+                raise RuntimeError(f"expected exactly one fetched SAC transfer of {amount}, found {matches}")
+            tx_hash = matches[0]
+            fetched = self.transactions[tx_hash]
+            if not all(k in fetched for k in ("result", "meta", "events")) or '"tx_success"' not in fetched["result"]:
+                raise RuntimeError(f"settlement transaction not fully fetched/successful: {tx_hash}")
+            settlement_hashes[str(amount)] = tx_hash
+
+        self.summary.update({
+            "execution_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "procuresettle_source_sha": subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, text=True, capture_output=True, check=True).stdout.strip(),
+            "procuresettle_source_tree": subprocess.run(["git", "rev-parse", "HEAD^{tree}"], cwd=self.repo, text=True, capture_output=True, check=True).stdout.strip(),
+            "wasm": {"filename": self.wasm.name, "size": wasm_size, "sha256": wasm_sha},
+            "rustc": subprocess.run(["rustc", "+1.95.0", "--version"], text=True, capture_output=True, check=True).stdout.strip(),
+            "cargo": subprocess.run(["cargo", "+1.95.0", "--version"], text=True, capture_output=True, check=True).stdout.strip(),
+            "stellar_cli": subprocess.run(["stellar", "--version"], text=True, capture_output=True, check=True).stdout.strip(),
+            "soroban_sdk": "28.0.0",
+            "network": {"info": info, "rpc_endpoint": TESTNET_RPC, "rpc_hostname": "soroban-testnet.stellar.org"},
+            "movix": extraction,
+            "po_id": po_id, "asset": f"MVXP:{self.address(self.args.issuer_identity)}",
+            "sac_id": sac, "contract_id": contract,
+            "control": {"final_po": po, "final_lines": lines, "receipt_states": receipts,
+                        "receipt_1_raw": r1_raw, "receipt_1_independent_value": r1_value,
+                        "stale_receipt_raw": stale_raw, "stale_value_initially_valid": stale_value,
+                        "stale_before": stale_before, "stale_after": stale_after,
+                        "stale_process_exit": stale_rc, "stale_contract_error": "QuantityExceedsRemaining (PoError #14)",
+                        "stale_failure_output": stale_error, "stale_equal": stale_equal,
+                        "receipt_3_raw": r3_raw, "receipt_3_independent_value": r3_value,
+                        "settlement_transaction_hashes": settlement_hashes,
+                        "final_balances": balances},
+            "whole_proof_balances": balances,
+            "transaction_count_unique": len(self.transactions),
+        })
+        summary_path = self.report / "summary.json"
+        summary_path.write_text(json.dumps(self.summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        print(json.dumps({"verdict": "PASS", "po_id": po_id, "first": r1_value,
+                          "stale_expected": stale_value, "stale_error": "QuantityExceedsRemaining (#14)",
+                          "stale_exit": stale_rc, "stale_equal": stale_equal, "final": r3_value,
+                          "status": po["status"], "paid": int(po["paid_value"]),
+                          "balances": balances, "settlement_hashes": settlement_hashes,
+                          "unique_fetched_transactions": len(self.transactions),
+                          "summary": str(summary_path)}, indent=2))
+        return self.summary
+
+    def read_stale_transcript(self, po_id: int, contract: str, sac: str,
+                              buyer: str, supplier: str) -> tuple[dict[str, Any], dict[str, Any], int, str]:
+        transcript_path = self.args.stale_transcript or self.log_path
+        text = transcript_path.read_text(encoding="utf-8")
+        blocks = list(re.finditer(r"(?m)^\$ (.+)$", text))
+        stale_index = next((i for i, m in enumerate(blocks)
+                            if "accept_receipt_and_settle" in m.group(1)
+                            and f"--po_id {po_id}" in m.group(1) and "--receipt_id 2" in m.group(1)), None)
+        if stale_index is None:
+            raise RuntimeError("raw transcript has no stale receipt invocation")
+        stop = blocks[stale_index + 1].start() if stale_index + 1 < len(blocks) else len(text)
+        start = blocks[stale_index].start()
+        stale_block = text[start:stop]
+        exit_match = re.search(r"(?m)^EXIT=(-?\d+)$", stale_block)
+        if not exit_match or int(exit_match.group(1)) == 0 or STALE_ERROR not in stale_block or HASH_RE.search(stale_block):
+            raise RuntimeError("raw stale attempt lacks a nonzero QuantityExceedsRemaining failure before submission")
+
+        def extract_snapshot(region: str, before: bool) -> dict[str, Any]:
+            region_blocks = list(re.finditer(r"(?m)^\$ (.+)$", region))
+            signatures = [
+                ("get_po", ""), ("get_line", "--line_id 1"), ("get_line", "--line_id 2"),
+                ("get_receipt", "--receipt_id 2"),
+                ("token balance", f"--account {buyer}"),
+                ("token balance", f"--account {supplier}"),
+                ("token balance", f"--account {contract}"),
+            ]
+            found: dict[str, Any] = {}
+            selected: list[tuple[re.Match[str], str]] = []
+            for name, suffix in signatures:
+                candidates = [m for m in region_blocks if name in m.group(1)
+                              and (f"--po_id {po_id}" in m.group(1) if name != "token balance" else True)
+                              and (suffix in m.group(1) if suffix else True)
+                              and (f"--id {sac}" in m.group(1) if name == "token balance" else True)]
+                if not candidates:
+                    raise RuntimeError(f"stale transcript missing {name} snapshot query {suffix}")
+                selected.append((candidates[-1] if before else candidates[0], name + suffix))
+            for match, key in selected:
+                next_block = next((m for m in region_blocks if m.start() > match.start()), None)
+                block_end = next_block.start() if next_block else len(region)
+                block = region[match.start():block_end]
+                out_match = re.search(r"STDOUT:\n(.*?)\nSTDERR:", block, re.S)
+                if not out_match:
+                    raise RuntimeError(f"stale transcript query has no stdout: {key}")
+                raw = out_match.group(1).strip()
+                try:
+                    value: Any = json.loads(raw)
+                except json.JSONDecodeError:
+                    value = int(raw)
+                if key.startswith("get_po"):
+                    found["po"] = value
+                elif key.startswith("get_line"):
+                    line_id = "1" if "--line_id 1" in key else "2"
+                    found.setdefault("lines", {})[line_id] = value
+                elif key.startswith("get_receipt"):
+                    found["receipt"] = value
+                else:
+                    account = key.split("--account ", 1)[1]
+                    role = "buyer" if account == buyer else "supplier" if account == supplier else "contract"
+                    found.setdefault("balances", {})[role] = value
+            return found
+
+        pre_region = text[:start]
+        post_region = text[stop:]
+        pre = extract_snapshot(pre_region, True)
+        post = extract_snapshot(post_region, False)
+        for snap in (pre, post):
+            if (snap.get("po", {}).get("status") != "Funded"
+                    or int(snap.get("po", {}).get("paid_value", -1)) != 197_500_000
+                    or snap.get("receipt", {}).get("status") != "Submitted"
+                    or snap.get("balances") != {"buyer": 0, "supplier": 197_500_000, "contract": 270_000_000}):
+                raise RuntimeError(f"stale transcript snapshot does not match expected post-receipt-1 checkpoint: {snap}")
+        return pre, post, int(exit_match.group(1)), stale_block
 
     def run_proof(self) -> dict[str, Any]:
         wasm_bytes = self.wasm.read_bytes()
@@ -422,8 +581,15 @@ class Proof:
         if self.args.resume_sac_id:
             sac = self.args.resume_sac_id
             initial = {role: self.balance(addresses[role], sac) for role in ("buyer", "supplier")}
-            initial["contract"] = self.balance(sac, sac)
-            if initial != {"buyer": 467_500_000, "supplier": 0, "contract": 0}:
+            initial["contract"] = self.balance(
+                self.args.resume_contract_id if (self.args.resume_po_id is not None or self.args.audit_completed_po_id is not None) else sac, sac
+            )
+            expected_resume = ({"buyer": 0, "supplier": 467_500_000, "contract": 0}
+                               if self.args.audit_completed_po_id is not None else
+                               {"buyer": 0, "supplier": 197_500_000, "contract": 270_000_000}
+                               if self.args.resume_po_id is not None else
+                               {"buyer": 467_500_000, "supplier": 0, "contract": 0})
+            if initial != expected_resume:
                 raise RuntimeError(f"resume asset balances differ from expected initial state: {initial}")
             self.summary["asset"] = f"MVXP:{addresses['issuer']}"
             self.summary["sac_id"] = sac
@@ -441,9 +607,21 @@ class Proof:
             self.summary["deployed_interface"] = (interface_out or interface_err).strip()
         else:
             contract = self.deploy()
+        if self.args.resume_po_id is None and self.args.audit_completed_po_id is None and self.balance(contract, sac) != 0:
+            raise RuntimeError("fresh ProcureSettle contract did not begin with zero MVXP balance")
         for tx_hash in self.args.fetch_hash:
             if tx_hash not in self.transactions:
                 self.fetch_transaction(tx_hash)
+        if self.args.audit_completed_po_id is not None:
+            return self.audit_completed_proof(
+                contract, self.args.audit_completed_po_id, sac, addresses["buyer"], addresses["supplier"],
+                info, extraction, wasm_sha, len(wasm_bytes),
+            )
+        if self.args.resume_po_id is not None:
+            return self.resume_after_first_settlement(
+                contract, self.args.resume_po_id, sac, addresses["buyer"], addresses["supplier"],
+                info, extraction, wasm_sha, len(wasm_bytes),
+            )
         po_id = time.time_ns() // 1_000_000 * 10
         self.summary["po_id"] = po_id
         self.create_po(contract, po_id, sac, addresses["buyer"], addresses["supplier"])
@@ -563,6 +741,102 @@ class Proof:
         }, indent=2))
         return self.summary
 
+    def resume_after_first_settlement(
+        self, contract: str, po_id: int, sac: str, buyer: str, supplier: str,
+        info: dict[str, Any], extraction: dict[str, Any], wasm_sha: str, wasm_size: int,
+    ) -> dict[str, Any]:
+        """Continue only from the independently checked F4 post-receipt-1 state."""
+        po = self.query(contract, "get_po", "--po_id", str(po_id))
+        lines = {str(i): self.query(contract, "get_line", "--po_id", str(po_id), "--line_id", str(i)) for i in (1, 2)}
+        receipt_1 = self.query(contract, "get_receipt", "--po_id", str(po_id), "--receipt_id", "1")
+        receipt_2 = self.query(contract, "get_receipt", "--po_id", str(po_id), "--receipt_id", "2")
+        balances = {role: self.balance(address, sac) for role, address in
+                    (("buyer", buyer), ("supplier", supplier), ("contract", contract))}
+        expected_checkpoint = {"buyer": 0, "supplier": 197_500_000, "contract": 270_000_000}
+        if (po["status"] != "Funded" or int(po["funded_value"]) != 467_500_000
+                or int(po["paid_value"]) != 197_500_000 or int(po["refunded_value"]) != 0
+                or [int(lines[str(i)]["accepted_quantity"]) for i in (1, 2)] != [1, 1]
+                or receipt_1["status"] != "Settled" or receipt_2["status"] != "Submitted"
+                or balances != expected_checkpoint):
+            raise RuntimeError(
+                f"resume checkpoint mismatch; refusing to continue: po={po}, lines={lines}, "
+                f"receipt1={receipt_1}, receipt2={receipt_2}, balances={balances}"
+            )
+        stale_before = {"po": po, "lines": lines, "receipt": receipt_2, "balances": balances}
+        stale_rc, stale_out, stale_err = self.run([
+            "contract", "invoke", "--id", contract, "--source", self.args.buyer_identity,
+            "--network", "testnet", "--", "accept_receipt_and_settle",
+            "--po_id", str(po_id), "--receipt_id", "2",
+        ], expected_exit=-1)
+        stale_error = stale_out + "\n" + stale_err
+        if STALE_ERROR not in stale_error or self.last_hashes:
+            raise RuntimeError(f"stale attempt did not fail in simulation with intended #14 before submission: {stale_error}")
+        stale_after = {
+            "po": self.query(contract, "get_po", "--po_id", str(po_id)),
+            "lines": {str(i): self.query(contract, "get_line", "--po_id", str(po_id), "--line_id", str(i)) for i in (1, 2)},
+            "receipt": self.query(contract, "get_receipt", "--po_id", str(po_id), "--receipt_id", "2"),
+            "balances": {role: self.balance(address, sac) for role, address in
+                         (("buyer", buyer), ("supplier", supplier), ("contract", contract))},
+        }
+        stale_equal = stale_before == stale_after and stale_after["receipt"]["status"] == "Submitted"
+        if not stale_equal:
+            raise RuntimeError(f"stale failure mutated economic state: before={stale_before}; after={stale_after}")
+
+        self.submit(contract, po_id, 3, [
+            {"line_id": 1, "quantity_delta": 1}, {"line_id": 2, "quantity_delta": 2},
+        ])
+        final_value, final_raw = self.receipt_value_from_raw(contract, po_id, 3)
+        if final_value != 270_000_000:
+            raise RuntimeError(f"independent final receipt calculation was {final_value}")
+        final = self.settle(contract, po_id, 3, 270_000_000, sac, buyer, supplier)
+        final_po = self.query(contract, "get_po", "--po_id", str(po_id))
+        final_lines = {str(i): self.query(contract, "get_line", "--po_id", str(po_id), "--line_id", str(i)) for i in (1, 2)}
+        final_receipt = self.query(contract, "get_receipt", "--po_id", str(po_id), "--receipt_id", "3")
+        final_balances = {role: self.balance(address, sac) for role, address in
+                          (("buyer", buyer), ("supplier", supplier), ("contract", contract))}
+        if (final_po["status"] != "Closed" or int(final_po["funded_value"]) != 467_500_000
+                or int(final_po["paid_value"]) != 467_500_000 or int(final_po["refunded_value"]) != 0
+                or [int(final_lines[str(i)]["accepted_quantity"]) for i in (1, 2)] != [2, 3]
+                or final_receipt["status"] != "Settled"
+                or final_balances != {"buyer": 0, "supplier": 467_500_000, "contract": 0}):
+            raise RuntimeError(f"final resumed proof state mismatch: po={final_po}, lines={final_lines}, balances={final_balances}")
+        self.summary.update({
+            "execution_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "procuresettle_source_sha": subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, text=True, capture_output=True, check=True).stdout.strip(),
+            "procuresettle_source_tree": subprocess.run(["git", "rev-parse", "HEAD^{tree}"], cwd=self.repo, text=True, capture_output=True, check=True).stdout.strip(),
+            "wasm": {"filename": self.wasm.name, "size": wasm_size, "sha256": wasm_sha},
+            "rustc": subprocess.run(["rustc", "+1.95.0", "--version"], text=True, capture_output=True, check=True).stdout.strip(),
+            "cargo": subprocess.run(["cargo", "+1.95.0", "--version"], text=True, capture_output=True, check=True).stdout.strip(),
+            "stellar_cli": subprocess.run(["stellar", "--version"], text=True, capture_output=True, check=True).stdout.strip(),
+            "soroban_sdk": "28.0.0",
+            "network": {"info": info, "rpc_endpoint": TESTNET_RPC, "rpc_hostname": "soroban-testnet.stellar.org"},
+            "movix": extraction,
+            "po_id": po_id,
+            "asset": f"MVXP:{self.address(self.args.issuer_identity)}",
+            "sac_id": sac,
+            "contract_id": contract,
+            "control": {"checkpoint_after_receipt_1": stale_before, "stale_before": stale_before,
+                        "stale_after": stale_after, "stale_equal": stale_equal,
+                        "stale_process_exit": stale_rc,
+                        "stale_contract_error": "QuantityExceedsRemaining (PoError #14)",
+                        "stale_failure_output": stale_error,
+                        "receipt_3_raw": final_raw, "receipt_3_independent_value": final_value,
+                        "settlement_3": final, "final_po": final_po, "final_lines": final_lines,
+                        "final_receipt": final_receipt, "final_balances": final_balances},
+            "whole_proof_balances": final_balances,
+            "transaction_count_unique": len(self.transactions),
+        })
+        summary_path = self.report / "summary.json"
+        summary_path.write_text(json.dumps(self.summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        print("PROCURESETTLE_MOVIX_TESTNET_PROOF_RESUMED")
+        print(json.dumps({"verdict": "PASS", "po_id": po_id, "receipt_3": 270_000_000,
+                          "stale_error": "QuantityExceedsRemaining (#14)", "stale_exit": stale_rc,
+                          "stale_equal": stale_equal, "final_status": final_po["status"],
+                          "paid": int(final_po["paid_value"]), "refunded": int(final_po["refunded_value"]),
+                          "final_balances": final_balances, "transactions": len(self.transactions),
+                          "summary": str(summary_path)}, indent=2))
+        return self.summary
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -576,6 +850,9 @@ def main() -> int:
     parser.add_argument("--reuse-identities", action="store_true", help="Resume only when all named identities already exist in the private config")
     parser.add_argument("--resume-sac-id", help="Use a SAC already established and independently balance-checked in this F4 config")
     parser.add_argument("--resume-contract-id", help="Continue with an already deployed F4 ProcureSettle instance")
+    parser.add_argument("--resume-po-id", type=int, help="Continue only from the verified post-receipt-1 F4 checkpoint")
+    parser.add_argument("--audit-completed-po-id", type=int, help="Audit a completed F4 PO and write its proof summary without chain writes")
+    parser.add_argument("--stale-transcript", type=Path, help="Prior private raw CLI transcript containing the stale attempt and pre/post snapshots")
     parser.add_argument("--deployment-hash", action="append", default=[], help="Previously submitted deployment transaction hash; may be repeated")
     parser.add_argument("--fetch-hash", action="append", default=[], help="Fetch prior submitted transaction result/meta/events before continuing")
     parser.add_argument("--prior-transactions", type=Path, help="Existing private transaction fetch map to extend")

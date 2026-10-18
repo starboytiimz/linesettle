@@ -135,13 +135,11 @@ captured Testnet run is evidence, not a recurring CI gate.
 
 ## Scope and limitations
 
-- No independent external-project compatibility proof has been completed.
-  An earlier exact-match Stage 7 search found no legitimate external target,
-  so Stage 8 was not executed at that time. Subsequent demand research
-  identified credible adjacent Stellar-native procurement/commerce workflows
-  that may serve as compatibility targets. No ProcureSettle external-project
-  compatibility proof, adoption, endorsement, or upstream integration is
-  claimed yet.
+- An earlier exact-match Stage 7 search found no legitimate external target,
+  so Stage 8 was not executed at that time. A later bounded read-only
+  compatibility proof against Movix's pinned line-item fixture is recorded
+  below. No Movix integration, adoption, endorsement, maintainer validation, or
+  upstream connection is claimed.
 - There is no physical-delivery proof: receipt quantities are submitted by the
   supplier and accepted by the buyer.
 - A public ProcureSettle Stellar Testnet flagship proof is recorded below. No
@@ -286,3 +284,72 @@ The earlier 24,387-byte `linesettle.wasm` and SHA-256
 the historical LineSettle artifact identity. Pre-rename proof logs and
 manifests are unchanged. The package rename changes the generated artifact
 identity while preserving the contract's settlement semantics.
+
+## Movix line-item model compatibility proof
+
+This is a read-only compatibility proof against the public Movix repository at
+immutable commit
+[`05f2ba1dbe72a8f46e546b4509281e54933708e4`](https://github.com/chrissstellee/Movix/tree/05f2ba1dbe72a8f46e546b4509281e54933708e4).
+ProcureSettle used the exact integer quantities and base-unit prices in Movix's
+`MOVIX-PO-0001` fixture: line 1 is 2 x 125,000,000 = 250,000,000; line 2 is 3
+x 72,500,000 = 217,500,000; the independently recomputed total is 467,500,000.
+The fixture, source blob identities, mapping, and explicit non-mappings are in
+[`evidence/movix/`](../evidence/movix/).
+
+Movix's [agricultural trade pivot](https://github.com/chrissstellee/Movix/blob/05f2ba1dbe72a8f46e546b4509281e54933708e4/docs/Movix-ASEAN-Agricultural-Trade-Pivot.md)
+and [fulfillment scope](https://github.com/chrissstellee/Movix/blob/05f2ba1dbe72a8f46e546b4509281e54933708e4/docs/Movix-Sprint-08-Fulfillment-Release-Detailed.md)
+defer split shipments, multiple lots, partial delivery, and partial release.
+Its [AGR-03 quantity-change boundary](https://github.com/chrissstellee/Movix/blob/05f2ba1dbe72a8f46e546b4509281e54933708e4/docs/Movix-ASEAN-Agricultural-Trade-Pivot.md)
+uses amendment or exception/refund handling rather than silently deriving a
+new payable amount, and the reviewed [escrow implementation](https://github.com/chrissstellee/Movix/blob/05f2ba1dbe72a8f46e546b4509281e54933708e4/contracts/escrow/src/lib.rs)
+releases the whole order after delivery confirmation. ProcureSettle therefore
+demonstrates a settlement primitive for a workflow Movix leaves deferred; this
+is not a drop-in implementation of Movix's current MVP policy.
+
+Using a new Testnet asset `MVXP` and a fresh ProcureSettle instance, the mapped
+PO funded 467,500,000 base units. Receipt 1 (1 / 1) independently calculated
+and actually transferred 197,500,000. A receipt (2 / 1), valid against the
+original terms, was then rejected after receipt 1 made it stale: the CLI exited
+1 with `QuantityExceedsRemaining` (PoError #14), no transaction was submitted,
+and the captured PO, both lines, receipt status, and three asset balances were
+equal before and after. Receipt 3 (1 / 2) independently calculated and
+transferred the remaining 270,000,000. The PO closed with funded and paid
+values of 467,500,000, refunded value 0, and final MVXP balances of buyer 0,
+supplier 467,500,000, and contract 0.
+
+This is a read-only compatibility proof. Movix does not integrate, use, endorse,
+or adopt ProcureSettle, and the proof does not implement Movix's current
+amendment/exception lifecycle. It maps only line numbers, integer quantities,
+and base-unit unit prices. It does not map organization authentication, terms,
+shipment/delivery hashes, disputes, amendments, escrow state, UI, or the Movix
+fixture asset; it does not establish fractional quantity, fee, tax, discount,
+shipping, quality adjustment, tolerance, or general ERP compatibility.
+
+The proof used ProcureSettle source `8153c07af135768823561dc548f15e1f70db2b57`
+(tree `fe9cf64605aa6b938c58805ad26417f8fd455318`) and
+`procuresettle.wasm`, 25,484 bytes, SHA-256
+`78b5c6dec22ad1cea497223ff411af544dcd1e9fd613b85514f2c5ae03873a7c`.
+Stellar CLI 28.1.0, Rust/Cargo 1.95.0, `soroban-sdk` 28.0.0, and public
+Testnet Protocol 29 were used. The fresh ProcureSettle contract instance is
+`CDGZXUY4VRWKJ6GQMOPPWL6J3DR3ITXSHJICRCWG3VPG44YR7VIJ6JYK`; the proof asset is
+`MVXP:GA2FXP4SEUGDX5FCEKYTA6VOJAOVKPT7YQWAM6V3C2XJTBBZZ2FLZ3BP`, wrapped by
+SAC `CBMB7BPC7WINV55FMRC7BEOZBYSZFBLZEMMXBJH4VTMS4IZBUZVOJPHG`. The proof
+transaction for this instance created the contract using the already-installed
+WASM hash; no separate code upload was needed in this run. The code hash was
+queried and matched the artifact above.
+
+The durable bundle preserves 16 unique fetched transaction hashes, each with
+result, metadata, and events; all submitted transactions returned `tx_success`.
+The settlement transactions are
+[`9198c5c3473d4bc811ee013008123ee02bf7bdf6e180af46549d63b3cd22d73c`](https://stellar.expert/explorer/testnet/tx/9198c5c3473d4bc811ee013008123ee02bf7bdf6e180af46549d63b3cd22d73c)
+for 197,500,000 and
+[`570ca04e0418e47daeba6084e6e9e852d1542cc0ba7c6c4e81980d70fe12d039`](https://stellar.expert/explorer/testnet/tx/570ca04e0418e9e852d1542cc0ba7c6c4e81980d70fe12d039)
+for 270,000,000. The full fetched transaction results/meta/events, normalized
+proof record, source-verification identities, mapping, manifest, and checksums
+are preserved in [`evidence/movix/`](../evidence/movix/).
+
+Testnet assets have no monetary value, and Testnet is periodically reset. The
+captured transaction records may eventually be unavailable from the live
+network; the fetched data is preserved in this repository. No Mainnet use,
+production readiness, security audit, physical-delivery verification, broad
+token compatibility, Movix integration, adoption, or endorsement is claimed.

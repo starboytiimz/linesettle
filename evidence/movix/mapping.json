@@ -1,0 +1,83 @@
+{
+  "schema": "procuresettle-movix-read-only-mapping-v1",
+  "target": {
+    "repository": "https://github.com/chrissstellee/Movix",
+    "commit": "05f2ba1dbe72a8f46e546b4509281e54933708e4",
+    "tree": "3b6544f482b86e9a5f7810cc6b5ce9e31d5aae58",
+    "fixture_path": "packages/domain/src/fixtures.ts",
+    "fixture_blob": "97177a96ed7da93f5163aef90354a070e432edaa",
+    "fixture_id": "MOVIX-PO-0001"
+  },
+  "line_mapping": [
+    {
+      "movix": {
+        "lineNumber": 1,
+        "quantity": 2,
+        "unitPriceBaseUnits": 125000000,
+        "computedLineValueBaseUnits": 250000000
+      },
+      "procuresettle": {
+        "line_id": 1,
+        "ordered_quantity": 2,
+        "unit_price": 125000000
+      }
+    },
+    {
+      "movix": {
+        "lineNumber": 2,
+        "quantity": 3,
+        "unitPriceBaseUnits": 72500000,
+        "computedLineValueBaseUnits": 217500000
+      },
+      "procuresettle": {
+        "line_id": 2,
+        "ordered_quantity": 3,
+        "unit_price": 72500000
+      }
+    }
+  ],
+  "total": {
+    "movix_totalBaseUnits": 467500000,
+    "procuresettle_total_value": 467500000,
+    "independent_calculation": "2 * 125000000 + 3 * 72500000"
+  },
+  "units": {
+    "quantity": "The selected Movix fixture uses integer quantities (scale 0).",
+    "price_and_value": "Integer token base units; no decimal scaling or currency conversion is performed.",
+    "asset": "Not mapped. The fixture's USDC Testnet identity is not used; F4 uses a newly issued MVXP Testnet asset solely for the proof."
+  },
+  "receipt_experiment": [
+    {
+      "receipt": 1,
+      "quantity_deltas": {"1": 1, "2": 1},
+      "expected_value_base_units": 197500000
+    },
+    {
+      "receipt": 2,
+      "quantity_deltas": {"1": 2, "2": 1},
+      "initially_valid": true,
+      "expected_value_base_units": 322500000,
+      "becomes_stale_after_receipt_1": true
+    },
+    {
+      "receipt": 3,
+      "quantity_deltas": {"1": 1, "2": 2},
+      "expected_value_base_units": 270000000
+    }
+  ],
+  "not_mapped": [
+    "Movix organization identity/authentication to ProcureSettle parties",
+    "terms hashes",
+    "shipment hashes",
+    "delivery hashes",
+    "exception or dispute state",
+    "current Movix amendment workflow",
+    "Movix escrow contract state",
+    "Movix UI",
+    "Movix live deployment",
+    "Movix fixture asset identity",
+    "fractional quantities where quantityScale is nonzero",
+    "discounts, taxes, shipping, quality-price adjustments, tolerance rules, Movix fees, or other commercial calculations"
+  ],
+  "compatibility_boundary": "Read-only source-model compatibility proof of a deferred partial-delivery/partial-release settlement primitive; not a drop-in implementation of Movix's current amendment/exception policy."
+}
